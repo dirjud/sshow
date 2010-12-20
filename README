@@ -1,0 +1,20 @@
+This is a port of dvd-slideshow to python. dvd-slideshow is a great
+tool for creating slideshows from still pictures. Amazingly it was
+written in bash shell scripting. The port to python is being done
+to faciliate new features.
+
+Features being considered or implemented include:
+
+- dvd-slideshow starts with a clean working directory everytime you
+  run it, so the video is built from scratch everytime. If you video
+  has a lot of effects in, particularly kenburns effects, this can
+  take a long time. Given that a typical work flow is much more
+  incremental in nature, the python port will keep as much of its
+  previous work around as it can and only recreate it as changes are
+  requested. This makes for a potentially much larger working
+  directory, but makes incremental rebuilds much faster.
+
+- kenburns effects are much easier to set via a GUI. The python port
+  seeks to integrate a GUI that can be launched to edit the source
+  file. Keeping the same command line functionality is desired,
+  however.
