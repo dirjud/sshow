@@ -3,9 +3,10 @@ import logging
 log = logging.getLogger(__name__)
 
 class FileLocation():
-    def __init__(self, filename, linenum):
+    def __init__(self, filename, linenum, line):
         self.filename = filename
         self.linenum = linenum
+        self.line    = line.replace("\n","")
 
     def __str__(self):
         return "%s (line %d)" % (self.filename, self.linenum)
@@ -28,7 +29,7 @@ class DVDSlideshow():
         linenum = 0
         for line in f:
             linenum += 1 
-            location = FileLocation(filename, linenum)
+            location = FileLocation(filename, linenum, line)
         
             line = line.strip()
         

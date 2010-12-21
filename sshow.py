@@ -350,13 +350,6 @@ config["logfile"] = config["slideshow_name"] + ".log"
 
 
 
-def truncate_filename(filename):
-    # truncate filenames so they're not longer than 40 characters:
-    if len(filename) > 40:
-        return filename[:40]
-    else:
-        return filename
-
 def read_theme(theme):
     def get_theme_from_dir(themedir):
         files = os.listdir(themedir)
@@ -373,7 +366,7 @@ def read_theme(theme):
     elif os.path.isfile(theme):
         themefile=os.path.abspath(theme)
         themedir=os.path.dirname(themefile)
-        echo("Using theme " + truncate_filename(theme))
+        echo("Using theme " + theme)
     else:
         # check in default theme directory:
         if os.path.isdir(themedir + "/" + theme):
@@ -385,7 +378,7 @@ def read_theme(theme):
         else:
             raise Exception("ERROR!  Bad theme name (not found)")
 
-    echo("Using theme "+ truncate_filename(themefile))
+    echo("Using theme "+ themefile)
     echo("Reading theme file...")
 
     theme_config = parse_config(themefile)
@@ -763,6 +756,7 @@ audio_index = {}
 audio_length = 0
 video_length = 0
 prev_element = None
+video_element_count  = 0
 for pos, element in enumerate(pipeline):
     if element.isa("Audio"):
         try:
@@ -784,11 +778,9 @@ for pos, element in enumerate(pipeline):
 
     prev_element = element
 
-    element.frames = int(round(config["framerate"] * element.duration/1000.))
-    element.frames_extended += element.frames
-
     if isSlide(element):
         video_length += element.duration
+        video_element_count += 1
     elif element.isa("Audio"):
         audio_length += element.duration
 
@@ -811,11 +803,6 @@ for pos, element in enumerate(pipeline):
                 raise Exception("No previous slide to "+element.name+" to!")
             if isNextTransition(pos, pipeline):
                 raise Exception("Cannot "+element.name+" to another transition!")
-
-	    ## Now calculate new slide times when using crossfade:
-            f = element.frames/2
-            prev_slide.frames_extended += f
-            next_slide.frames_extended += element.frames-f
   	elif element.isa("Transition") and element.name == 'fadeout':
             try:
                 prevSlide(pos, pipeline)
@@ -825,7 +812,7 @@ for pos, element in enumerate(pipeline):
                 raise Exception("Cannot fadeout to another transition")
 
     except Exception, e:
-        raise Exception("%s (line %d): %s" % (element.srcfile, element.linenum, str(e)))
+        raise Exception("%s: %s" % (element.location, str(e)))
     
 	
 
@@ -937,12 +924,6 @@ elif config["vcd"]:
 
 
 
-has_subtitles=0
-has_subtitles2=0
-frame_time=0
-total_slideshow_frames=0
-
-
 if config["mpeg_encoder"] == 'ffmpeg':
     if config["output_format"] == 'flv':
         # do pass one first, then add audio at the end during pass 2?
@@ -1044,6 +1025,7 @@ def split_imgs(imgs, prev_frames, curr_frames, next_frames):
 
     return prev, curr, next
 
+count=0
 for element in pipeline:
     element.start_frame = total_frames
 
@@ -1057,6 +1039,9 @@ for element in pipeline:
 
     if(element.isa("Transition")):
         continue
+
+    count += 1
+    sys.stderr.write("%d/%d: Line %d: %s\n" % (count, video_element_count, element.location.linenum, element.location.line))
 
     # calculate the number of frames this element will consume
     frames = num_frames(config, element.duration)
@@ -1074,7 +1059,10 @@ for element in pipeline:
         next_frames = 0
 
     # generate the frames
-    imgs = element.get_images(prev_frames + frames + next_frames, config)
+    try:
+        imgs = element.get_images(prev_frames + frames + next_frames, config)
+    except Exception, e:
+        raise Exception("%s: %s" % (element.location, str(e)))
 
     # now split up the frames based on the transition
     prev_imgs1, cur_imgs, next_imgs = split_imgs(imgs, prev_frames, frames, next_frames)
@@ -1214,4 +1202,4 @@ verbosity=0
 #	fi
 #else  # default mpeg2 video for dvd/vcd
 if config["ac3"]:
-    cmd("mplex -V "+config["video_buffer"]+" "+config["ignore_seq_end"]+" -f "+str(config["mplex_type"])+" -o "+config["outdir"]+"/"+config["slideshow_name"]+".vob "+config["workdir"]+"/video.mpg "+config["workdir"]+"/audio.ac3")
+    cmd("mplex -V "+config["video_buffer"]+" "+config["ignore_seq_end"]+" -f "+str(config["mplex_type"])+" -o "+config["outdir"]+"/"+config["slideshow_name"]+".vob "+config["workdir"]+"/video.mpg "+config["workdir"]+"/audio.ac3 2&> /dev/null")

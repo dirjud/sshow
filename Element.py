@@ -1,9 +1,23 @@
-import os, subprocess, hashlib
+import os, subprocess, hashlib, time, sys
 import logging
 import KenBurns
 
 log = logging.getLogger(__name__)
 
+class Progress():
+    def initialize(self, caption):
+        self.caption = caption
+        self.time0   = time.time()
+    
+    def update(self, i, N):
+        n = 40
+        p = 100 * i / N
+        f = n * p / 100
+        sys.stderr.write("  "+self.caption+": |" + "=" * f + ' ' * (n-f)+"| %3d%%\r" % p)
+    def done(self):
+        sys.stderr.write("  "+self.caption+": Elapsed Time=%s seconds" % (time.time()-self.time0,))
+        sys.stderr.write(" " * 20)
+        sys.stderr.write("\n")
 
 
 def cmd(x):
@@ -131,7 +145,7 @@ class Image(Element):
         fx = [e.name for e in self.effects]
         if("kenburns" in fx):
             param = self.effects[fx.index("kenburns")].param
-            return KenBurns.kenburns(config, param, self.filename, N)
+            return KenBurns.kenburns(config, param, self.filename, N,Progress())
         else:
             return [ (self.filename, N), ]
 

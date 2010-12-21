@@ -53,7 +53,7 @@ def parse_window(args, filename, config):
     	yi=0 # will need to add frame border later...
     	xi= int(round(( new_image_width - image_width ) / 2. ))
 
-    if args[0].index("%")>-1 or args[0] in ['imagewidth', 'imageheight']:
+    if args[0].find("%")>-1 or args[0] in ['imagewidth', 'imageheight']:
     	## use "keywords"
     	## first parse the zoom amount:
     	loc=args[1]
@@ -68,7 +68,7 @@ def parse_window(args, filename, config):
     	else:
             ## this needs to be in the non-square pixel frame, hence the
             ## resize_factor
-            zoom_percent=eval(args[0][:args[0].index("%")])
+            zoom_percent=eval(args[0][:args[0].find("%")])
             ## need to make the largest dimension smaller, and then scale the
             ## other dimension to the correct aspect ratio!
             if ratio > out_ratio:
@@ -93,7 +93,7 @@ def parse_window(args, filename, config):
     	xmiddle1=int(round(new_image_width  / 2. + xw / 2.))
     
     	## now parse the box location:
-        if args[1].index("%") > -1: # second arg contains a %
+        if args[1].find("%") > -1: # second arg contains a %
             # location is specified as a percent of the window size
             try:
                 xcenter_pct, ycenter_pct = map(eval, args[1].replace("%","").split(","))
@@ -268,7 +268,7 @@ def crop_parameters(config, image_width, image_height, x0, y0, x1, y1, xi, yi):
     return (xc0, yc0), (int(c_width), int(c_height)), (xi0, yi0), (xci, yci), (predicted_resized_width, predicted_resized_height)
 
 
-def kenburns(config, params, ifile, frames):
+def kenburns(config, params, ifile, frames, progress):
 # Kenburns $window_start $window_end $ifile $total_frames $startframe $lastframe bg [$char]
 
 
@@ -386,8 +386,8 @@ def kenburns(config, params, ifile, frames):
     if not(config["kenburns_acceleration"]):
     	# do not use smoothing, or set it to a very small number
     	F1 = 1
-    elif (type(config["kenburns_acceleration"]) is str) and (config["kenburns_acceleration"].index("%") > -1):
-    	kb_acceleration_percent = eval(config["kenburns_acceleration"][:config["kenburns_acceleration"].index("%")])
+    elif (type(config["kenburns_acceleration"]) is str) and (config["kenburns_acceleration"].find("%") > -1):
+    	kb_acceleration_percent = eval(config["kenburns_acceleration"][:config["kenburns_acceleration"].find("%")])
     	F1 = frames * kb_acceleration_percent / 100.
     	if F1 == 0:
             F1=1
@@ -412,8 +412,11 @@ def kenburns(config, params, ifile, frames):
     pi=3.14159265
     ## start loop for kenburns effect: #################################
     imgs = []
+
+    progress.initialize("Ken Burns")
     for fr in range(0, frames, stepsize):
-    	dj="%04d"%fr
+        progress.update(fr, frames/stepsize)
+
     	if fr <= F1:  # region 1   x0,y0,x1,y1 are floating point numbers
     	    x0 = xs0 + V0x/2. * (fr - F1/pi * math.sin(pi*fr/F1))
     	    y0 = ys0 + V0y/2. * (fr - F1/pi * math.sin(pi*fr/F1))
@@ -498,7 +501,7 @@ def kenburns(config, params, ifile, frames):
                 top    = top + bottom
                 bottom = 0
 
-            convert = ("convert "+file1+" -filter "+config["filtermethod"]+" -crop "+str(c_width)+"x"+str(c_height)+"+"+str(xc0)+"+"+str(yc0)+" +repage -type TrueColorMatte -depth 8 $convolve -resize "+str(config["frame_width"])+"x"+str(config["frame_height"]) + " ").replace("%","%%") + "%s"
+            convert = ("convert "+file1+" -filter "+config["filtermethod"]+" -crop "+str(c_width)+"x"+str(c_height)+"+"+str(xc0)+"+"+str(yc0)+" +repage -type TrueColorMatte -depth 8 "+convolve+" -resize "+str(config["frame_width"])+"x"+str(config["frame_height"]) + " ").replace("%","%%") + "%s"
             file1a = Element.cmdif(file1, config["workdir"], suffix, convert)
 
     	    # now, get size of resized image because of roundoff errors:
@@ -542,4 +545,5 @@ def kenburns(config, params, ifile, frames):
     	#	fi
     	#fi
     	#progressbar $(( $fr - $startframe +1 )) $(( $endframe - $startframe + 1 )) "$c"
+    progress.done()
     return imgs
