@@ -53,7 +53,6 @@ def parse_window(args, filename, config):
     	yi=0 # will need to add frame border later...
     	xi= int(round(( new_image_width - image_width ) / 2. ))
 
-    print "new_image_width=",new_image_width, "new_image_height=",new_image_height,"xi=",xi,"yi=",yi
     if args[0].index("%")>-1 or args[0] in ['imagewidth', 'imageheight']:
     	## use "keywords"
     	## first parse the zoom amount:
@@ -100,11 +99,11 @@ def parse_window(args, filename, config):
                 xcenter_pct, ycenter_pct = map(eval, args[1].replace("%","").split(","))
             except:
                 raise Exception("Bad xcenter/ycenter percentage")
-            xcenter= 10 * new_image_width  * xcenter_pct / 100.
-            ycenter= 10 * new_image_height * ycenter_pct / 100.
-            x0= int(round(xcenter - 10 * xw / 2.))
+            xcenter= new_image_width  * xcenter_pct / 100.
+            ycenter= new_image_height * ycenter_pct / 100.
+            x0= int(round(xcenter - xw / 2.))
             x1= x0 + xw
-            y0= int(round(ycenter - 10 * yh / 2.))
+            y0= int(round(ycenter - yh / 2.))
             y1= y0 + yh
     	elif loc == 'topleft':
             x0=0; x1=xw
@@ -135,6 +134,7 @@ def parse_window(args, filename, config):
             y0= new_image_height - yh; y1=new_image_height
     	else:
             raise Exception("Bad syntax in kenburns/crop location: %s" % (loc,))
+
     else:  # check for original format with explicit start/end coordinates:
     	## coordinate system is relative to the actual picture, unscaled, 
     	## in square pixel frame!!!
@@ -167,7 +167,7 @@ def parse_window(args, filename, config):
     	y0 += yi
     	yi += yi
 
-    return x0, y0, x1, y1
+    return x0, y0, x1, y1, xi, yi
 
 def crop_parameters(config, image_width, image_height, x0, y0, x1, y1, xi, yi):
     # converts the crop parameters reference in the full dvd aspect ratio
@@ -251,21 +251,21 @@ def crop_parameters(config, image_width, image_height, x0, y0, x1, y1, xi, yi):
     predicted_resized_height= resized_height/1000.
 
     xc0_whole = int(xc0); xc0_dec = xc0 - xc0_whole
-    yc0_while = int(yc0); yc0_dec = yc0 - yc0_whole
+    yc0_whole = int(yc0); yc0_dec = yc0 - yc0_whole
     xc0 = int(round(xc0 / 1000.)); yc0 = int(round(yc0 / 1000.))
     xci=int(round(xci/1000.)); yci=int(round(yci/1000.)) # rounding might cause problems.  watch this.
     ## make sure xci + predicted_resized_width < dvd_width 
     ## and yci + predicted_resized_height < dvd_height
-    if yci + predicted_resized_height > frame_height:
-    	yci = frame_height - predicted_resized_height
-    if xci + predicted_resized_width  > frame_width:
-    	xci = frame_width  - predicted_resized_width
+    if yci + predicted_resized_height > config["frame_height"]:
+    	yci = config["frame_height"] - predicted_resized_height
+    if xci + predicted_resized_width  > config["frame_width"]:
+    	xci = config["frame_width"]  - predicted_resized_width
 
     # used output is:
     # xc0,yc0 (coordinates of the top left corner of the image crop in the image frame)
     # c_width,c_height (crop width and height in the image frame)
     # xi0,yi0 (coordinates of where to put the top left corner of the image on the background)
-    return (xc0, yc0), (c_width, c_height), (xi0, yi0), (predicted_resized_width, predicted_resized_height)
+    return (xc0, yc0), (c_width, c_height), (xi0, yi0), (xci, yci), (predicted_resized_width, predicted_resized_height)
 
 
 def kenburns(config, params, ifile, frames):
@@ -284,10 +284,8 @@ def kenburns(config, params, ifile, frames):
     image_width = int(round(image_width * config["resize_factor"]))
 
     fields = map(str.strip, params.split(";"))
-    print "image_width x image_height", image_width, "x", image_height
-    print fields
-    (xs0, ys0, xs1, ys1) = parse_window(fields[:2], ifile, config)
-    (xe0, ye0, xe1, ye1) = parse_window(fields[2:], ifile, config)
+    (xs0, ys0, xs1, ys1, xi, yi) = parse_window(fields[:2], ifile, config)
+    (xe0, ye0, xe1, ye1, xi, yi) = parse_window(fields[2:], ifile, config)
 
     print "xs0=",xs0,"ys0=",ys0,"xs1=",xs1,"ys1=",ys1
     print "xe0=",xe0,"ye0=",ye0,"xe1=",xe1,"ye1=",ye1
@@ -445,10 +443,10 @@ def kenburns(config, params, ifile, frames):
     	    y1 = D1y1 + V1y * (fr-F1)
     	    D2x0=x0 ; D2y0=y0 ; D2x1=x1 ; D2y1=y1  # distance gone so far
 
-        x0_whole = int(x0); x0dec = x0-x0_whole; x0 = int(round(x0))
-        y0_whole = int(y0); y0dec = y0-y0_whole; y0 = int(round(y0))
-        x1_whole = int(x1); x1dec = x1-x1_whole; x1 = int(round(x1))
-        y1_whole = int(y1); y1dec = y1-y1_whole; y1 = int(round(y1))
+        x0_whole = int(x0); x0_dec = x0-x0_whole; x0 = int(round(x0))
+        y0_whole = int(y0); y0_dec = y0-y0_whole; y0 = int(round(y0))
+        x1_whole = int(x1); x1_dec = x1-x1_whole; x1 = int(round(x1))
+        y1_whole = int(y1); y1_dec = y1-y1_whole; y1 = int(round(y1))
     
     	## now optionally do convolution if high-quality is enabled:
     	if interp:
@@ -458,19 +456,19 @@ def kenburns(config, params, ifile, frames):
             Bfactor = 100*(  x0_dec)*(1-y0_dec)
             Cfactor = 100*(1-x0_dec)*(  y0_dec)
             Dfactor = 100*(  x0_dec)*(  y0_dec)
-    	    convolve="-convolve 0,0,0,0,%3.0f,%3.0f,0,%3.0f,%3.0f" % (Afactor,Bfactor,0,Cfactor,Dfactor)
+    	    convolve="-convolve 0,0,0,0,%f,%f,0,%f,%f" % (Afactor,Bfactor,Cfactor,Dfactor)
             log.debug(convolve)
     	else:
             convolve="-filter "+config["filtermethod"]
     
     	# [c_width c_height xc0 yc0 xci yci]=crop_parameters(image_width image_height frame_width frame_height x0 y0 x1 y1 xi yi)
         print "x0=",x0, "y0=",y0, "x1=",x1, "y1=",y1
-        (xc0, yc0), (c_width, c_height), (xi0, yi0), (predicted_resized_width, predicted_resized_height) = crop_parameters(config, image_width, image_height, x0, y0, x1, y1, xi, yi) # figure out final crop parameters
+        (xc0, yc0), (c_width, c_height), (xi0, yi0), (xci, yci), (predicted_resized_width, predicted_resized_height) = crop_parameters(config, image_width, image_height, x0, y0, x1, y1, xi, yi) # figure out final crop parameters
     	# outputs correct predicted_resized_width and predicted_resized_height
     
     	delta_width = config["dvd_width"]  - predicted_resized_width
     	delta_height= config["dvd_height"] - predicted_resized_height
-    	if delta_width <= 1 and delta_height <= 1 and frame_border == 0:
+    	if delta_width <= 1 and delta_height <= 1 and config["frame_border"] == 0:
             convert = "convert "+file1+" -filter "+config["filtermethod"]+" -crop "+str(c_width)+"x"+str(c_height)+"+"+str(xc0)+"+"+str(yc0)+" +repage -type TrueColorMatte -depth 8 "+convolve+" -resize "+str(config["dvd_width"])+"x"+str(config["dvd_height"])+"! "+config["sharpen"]+" -type TrueColorMatte -depth 8 ".replace("%","%%")+" %s"
             file2 = Element.cmdif(file1, config["workdir"], suffix, convert)
             #extracopies $fr $frames $suffix
@@ -503,19 +501,18 @@ def kenburns(config, params, ifile, frames):
     	    if right < 0: 
                 left = left + right
                 right = 0
-    	    top    = yci + frame_border
+    	    top    = yci + config["frame_border"]
             bottom = delta_height - top
     	    if bottom < 0: 
                 top    = top + bottom
                 bottom = 0
 
-            convert = ("convert "+file1+" -filter "+config["filtermethod"]+" -crop "+str(c_width)+"x"+str(c_height)+"+"+str(xc0)+"+"+str(yc0)+" +repage -type TrueColorMatte -depth 8 $convolve -resize "+config["frame_width"]+"x"+config["frame_height"] + " ").replace("%","%%") + "%s"
+            convert = ("convert "+file1+" -filter "+config["filtermethod"]+" -crop "+str(c_width)+"x"+str(c_height)+"+"+str(xc0)+"+"+str(yc0)+" +repage -type TrueColorMatte -depth 8 $convolve -resize "+str(config["frame_width"])+"x"+str(config["frame_height"]) + " ").replace("%","%%") + "%s"
             file1a = Element.cmdif(file1, config["workdir"], suffix, convert)
 
     	    # now, get size of resized image because of roundoff errors:
     	    # need to get this correct in the future so we can run this in smp mode!
-    	    resized_width = cmd('identify -format "%w\n" '+file1a)
-    	    resized_height= cmd('identify -format "%h\n" '+file1a)
+    	    resized_width, resized_height = Element.get_dims(file1a)
     	    delta_width   = config["dvd_width"]  - resized_width
     	    delta_height  = config["dvd_height"] - resized_height
     	    left  = xci + config["frame_border"]
@@ -535,8 +532,7 @@ def kenburns(config, params, ifile, frames):
             
             # works with imagemagick > 6.0.6  (convert "$tmpdir/temp_slideshow_image_scaled.mpc" -crop "$c_width"x"$c_height"+$xc0+$yc0 +repage -resize "$dvd_width"x"$dvd_height" -bordercolor black -compose src-over -border 0 -background black -splice "$right"x"$bottom"+$i_width+$i_height -splice "$left"x"$top" -type TrueColorMatte -depth 8 "$tmpdir/fade_$dj.ppm" ; extracopies $fr $frames )
 
-        for i in range(stepsize):
-            imgs.append(file2)
+        imgs.append((file2, stepsize))
 
         ## this next line only works for non-smp! (since file must exist first)
     	## errors here (not depth=8) will often cause ppmtoy4m errors
