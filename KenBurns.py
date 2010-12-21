@@ -287,9 +287,6 @@ def kenburns(config, params, ifile, frames):
     (xs0, ys0, xs1, ys1, xi, yi) = parse_window(fields[:2], ifile, config)
     (xe0, ye0, xe1, ye1, xi, yi) = parse_window(fields[2:], ifile, config)
 
-    print "xs0=",xs0,"ys0=",ys0,"xs1=",xs1,"ys1=",ys1
-    print "xe0=",xe0,"ye0=",ye0,"xe1=",xe1,"ye1=",ye1
-
     if xs0 == xe0 and ys0 == ye0 and xs1 == xe1 and ys1 == ye1:
     	# start and end are the same!
     	log.warn("WARNING: Start and end of kenburns effect are the same! Use crop and it will be MUCH faster!")
@@ -304,11 +301,6 @@ def kenburns(config, params, ifile, frames):
     s_height= ys1 - ys0
     e_width = xe1 - xe0
     e_height= ye1 - ye0
-    log.info("Coordinate system is original image size buffered out to dvd aspect ratio")
-    log.info("and then rescaled to non-square pixels")
-    log.info("Start: width=$s_width height=$s_height  $xs0,$ys0 : $xs1,$ys1")
-    log.info("End:   width=$e_width height=$e_height  $xe0,$ye0 : $xe1,$ye1")
-    log.info("Image top left corner:   xi=$xi yi=$yi")
     
     ## adjust step size: ##############################
     if config["low_quality"]:
@@ -462,7 +454,6 @@ def kenburns(config, params, ifile, frames):
             convolve="-filter "+config["filtermethod"]
     
     	# [c_width c_height xc0 yc0 xci yci]=crop_parameters(image_width image_height frame_width frame_height x0 y0 x1 y1 xi yi)
-        print "x0=",x0, "y0=",y0, "x1=",x1, "y1=",y1
         (xc0, yc0), (c_width, c_height), (xi0, yi0), (xci, yci), (predicted_resized_width, predicted_resized_height) = crop_parameters(config, image_width, image_height, x0, y0, x1, y1, xi, yi) # figure out final crop parameters
     	# outputs correct predicted_resized_width and predicted_resized_height
     

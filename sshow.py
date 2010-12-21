@@ -31,7 +31,7 @@ def echo(x):
     log.info(x)
 
 def cmd(x):
-    print x
+    log.debug(x)
     p = subprocess.Popen(x, shell=True, stdout=subprocess.PIPE)
     return p.stdout.read()[:-1] # chop off final carriage return
 
@@ -985,7 +985,7 @@ encoder = subprocess.Popen(encoder_cmd, shell=True, stdin=subprocess.PIPE, stdou
 def encode(encoder, image, numframes, config):
 
     ppm_cmd = "ppmtoy4m -v "+str(config["verbosity"])+" -n "+str(numframes)+" -r -S "+config["subsample"]+" -F "+config["ppmtoy4m_frc"]+" -A "+config["ppmtoy4m_aspect"]+" -I p "+image
-    log.info(ppm_cmd)
+    #log.info(ppm_cmd)
     p = subprocess.Popen(ppm_cmd, shell=True, stdout=subprocess.PIPE)
     if(config["yuvfirstfile"]):
         config["yuvfirstfile"] = 0
@@ -997,6 +997,53 @@ def encode(encoder, image, numframes, config):
 total_frames = 0
 audio_duration = 0
 audio_pipeline = []
+prev_imgs0 = []
+def num_frames(config, duration):
+    return int(config["framerate"] * duration / 1000)
+
+def split_imgs(imgs, prev_frames, curr_frames, next_frames):
+    count = 0
+    prev = []
+    curr = []
+    next = []
+    prevN = prev_frames
+    currN = prev_frames + curr_frames
+    nextN = prev_frames + curr_frames + next_frames
+    state = "prev"
+
+    for img in imgs:
+        available = img[1]
+        if state == "prev":
+            if count == prevN:
+                state = "curr"
+            elif count + available > prevN:
+                state = "curr"
+                prev.append( (img[0], prevN-count) )
+                available -= prevN - count
+                count     += prevN - count
+            else:
+                prev.append( (img[0], available) )
+                count += available
+        
+        if state == "curr":
+            if count == currN:
+                state = "next"
+            elif count + available > currN:
+                state = "next"
+                curr.append( (img[0], currN-count) )
+                available -= currN - count
+                count     += currN - count
+            else:
+                curr.append( (img[0], available) )
+                count += available
+
+        if state == "next":
+            if available:
+                next.append( (img[0], available) )
+                count += available
+
+    return prev, curr, next
+
 for element in pipeline:
     element.start_frame = total_frames
 
@@ -1009,14 +1056,43 @@ for element in pipeline:
         continue
 
     if(element.isa("Transition")):
-        continue # not supported yet
+        continue
 
-    frames = int(config["framerate"]*element.duration/1000)
-    imgs = element.get_images(frames, config)
-    for img in imgs:
+    # calculate the number of frames this element will consume
+    frames = num_frames(config, element.duration)
+
+    # check if we need to generate frames to overlap with the
+    # last/next element as part as part of a transition
+    if element.prev and element.prev.isa("Transition"):
+        prev_frames = num_frames(config, element.prev.duration)
+    else:
+        prev_frames = 0
+    
+    if element.next and element.next.isa("Transition"):
+        next_frames = num_frames(config, element.next.duration)
+    else:
+        next_frames = 0
+
+    # generate the frames
+    imgs = element.get_images(prev_frames + frames + next_frames, config)
+
+    # now split up the frames based on the transition
+    prev_imgs1, cur_imgs, next_imgs = split_imgs(imgs, prev_frames, frames, next_frames)
+
+    # process previous transition
+    if prev_frames:
+        comp_imgs = element.prev.compose(prev_imgs0, prev_imgs1, config)
+        for img in comp_imgs:
+            encode(encoder, img[0], img[1], config)
+            total_frames += img[1]
+
+    # process current frames (i.e. frames not in transition)
+    for img in cur_imgs:
         encode(encoder, img[0], img[1], config)
-        print img
         total_frames += img[1]
+
+    # save off the frames of the next transition for the next time around
+    prev_imgs0 = next_imgs
 
 encoder.stdin.close()
 encoder.wait()

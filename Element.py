@@ -7,7 +7,7 @@ log = logging.getLogger(__name__)
 
 
 def cmd(x):
-    log.info("cmd: " + x)
+    log.debug("cmd: " + x)
     p = subprocess.Popen(x, shell=True, stdout=subprocess.PIPE)
     return p.stdout.read()[:-1] # chop off final carriage return
 
@@ -26,15 +26,19 @@ def cmdif(src, outdir, extension, command):
     if src is None:
         src_date = 0
     else:
-        src_date = os.path.getmtime(src)
+        src_date = 0
+        if type(src) in [list, tuple]:
+            for s in src:
+                src_date = max(os.path.getmtime(s), src_date)
+        else:
+            src_date = os.path.getmtime(src)
     dest = outdir + "/" + sha1 + "." + extension
     if(os.path.exists(dest)):
         dest_date = os.path.getmtime(dest)
         if(src_date < dest_date):
-            log.info("NOT RECREATING "+dest)
-            log.info(command)
+            log.debug("NOT RECREATING "+dest)
+            log.debug(command)
             return dest
-    print command
     cmd(command % dest)
     return dest
             
@@ -127,7 +131,6 @@ class Image(Element):
         fx = [e.name for e in self.effects]
         if("kenburns" in fx):
             param = self.effects[fx.index("kenburns")].param
-            print param, self.filename, N
             return KenBurns.kenburns(config, param, self.filename, N)
         else:
             return [ (self.filename, N), ]
@@ -320,6 +323,37 @@ class Transition(Element):
             raise Exception("Transition duration must be a positive number.")
         self.name = name
         self.duration = duration
+
+    def compose(self, imgs0, imgs1, config):
+        N = int(config["framerate"] * self.duration / 1000.)
+
+        if len(imgs0) == 0:
+            imgs0 = [ self._find_background().filename, N ]
+        if len(imgs1) == 0:
+            raise Exception("Internal Error: Length of imgs1 sequence is zero")
+
+        # unwrap each sequence into a list of files
+        unwrap0 = []
+        unwrap1 = []
+
+        for img in imgs0:
+            for i in range(img[1]):
+                unwrap0.append(img[0])
+        for img in imgs1:
+            for i in range(img[1]):
+                unwrap1.append(img[0])
+
+        if len(unwrap0) != N or len(unwrap1) != N:
+            raise Exception("Internal Error Generating Transition. Number of overlapping frames in transition is not equal to %d." % N)
+
+        imgs = []
+        for i, (img0, img1) in enumerate(zip(unwrap0, unwrap1)):
+            imgs.append((eval("self."+self.name+"(img0, img1, i, N, config)"), 1))
+        return imgs
+    
+    def crossfade(self, img0, img1, i, N, config):
+        compose = ("composite -blend %s %s %s" % (i*100/N, img1, img0,)) + " %s"
+        return cmdif([img0,img1], config["workdir"], "ppm", compose)
 
 
 ################################################################################
