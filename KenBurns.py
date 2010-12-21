@@ -265,7 +265,7 @@ def crop_parameters(config, image_width, image_height, x0, y0, x1, y1, xi, yi):
     # xc0,yc0 (coordinates of the top left corner of the image crop in the image frame)
     # c_width,c_height (crop width and height in the image frame)
     # xi0,yi0 (coordinates of where to put the top left corner of the image on the background)
-    return (xc0, yc0), (c_width, c_height), (xi0, yi0), (xci, yci), (predicted_resized_width, predicted_resized_height)
+    return (xc0, yc0), (int(c_width), int(c_height)), (xi0, yi0), (xci, yci), (predicted_resized_width, predicted_resized_height)
 
 
 def kenburns(config, params, ifile, frames):
@@ -359,7 +359,7 @@ def kenburns(config, params, ifile, frames):
     else:
     	resize=''
 
-    convert = ("convert "+ifile+" -filter "+config["filtermethod"]+" -resize "+config["sq_to_dvd_pixels"]+" "+resize +" repage -type TrueColorMatte -depth 8 ").replace("%","%%") + " %s"
+    convert = ("convert "+ifile+" -filter "+config["filtermethod"]+" -resize "+config["sq_to_dvd_pixels"]+" "+resize +" +repage -type TrueColorMatte -depth 8 ").replace("%","%%") + " %s"
     file1 = Element.cmdif(ifile, config["workdir"], "mpc", convert)
     
     ############################ end crop/resize large images
