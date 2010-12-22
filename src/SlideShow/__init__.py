@@ -434,6 +434,30 @@ def initialize_pipeline(pipeline, config):
     config["aspect_ratio_float"] = aspect_ratio[0]/aspect_ratio[1]
     config["resize_factor"] = config["dvd_width"]/config["aspect_ratio_float"]/config["dvd_height"]
 
+    config["sq_to_dvd_pixels"]=str(config["resize_factor"]*100)+"x100%"
+
+    if config.has_key("output_size"):
+	# used user-set size, instead of defaults!
+	config.update(dict(
+                orig_dvd_width=config["dvd_width"],
+                orig_dvd_height=config["dvd_height"],
+                ))
+	config["dvd_width"], config["dvd_height"] = config["output_size"].split("x")
+	if config["output_format"] in ['flv', 'swf' ]:
+            config["video_bitrate"] = config["video_bitrate"] * config["dvd_width"] * config["dvd_height"] / config["orig_dvd_width"] / config["orig_dvd_height"]
+
+    if config.has_key("output_framerate"):
+        config["framerate"]=float(config["output_framerate"])
+        config["ppmtoy4m_frc"]= str(config["framerate"])+":1"  # fps  need to fix this to allow any option!
+
+    config["frame_border"] = config["border"]
+    config["frame_width"]= config["dvd_width"] - 2 * config["frame_border"]
+    config["frame_height"]= config["dvd_height"] - 2 * config["frame_border"]
+
+    if config["sharpen"]:
+        config["sharpen"]='-unsharp 4.8x2.2+0.5+0.05'
+    else:
+        config["sharpen"]=''
 
     audio_index = {}
     audio_length = 0

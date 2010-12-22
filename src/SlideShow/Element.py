@@ -146,12 +146,10 @@ class Image(Element):
             x += ":" + fx
         return x
 
-    def initialize(self, prev, next, config):
-        Element.initialize(self, prev, next, config)
-        self.copy_file(config)
-        self.rotate(config)
-        if not("kenburns" in [e.name for e in self.effects]):
-            self.create_slide(config)
+    def update_filename(self, filename):
+        self.filename_orig = filename
+        self.filename = filename
+        self.extension = filename.split(".")[-1]
 
     def get_images(self, N, config):
         fx = [e.name for e in self.effects]
@@ -159,25 +157,8 @@ class Image(Element):
             param = self.effects[fx.index("kenburns")].param
             return KenBurns.kenburns(config, param, self.filename, N,Progress())
         else:
+            self.create_slide(config)
             return [ (self.filename, N), ]
-
-    def copy_file(self, config):
-        # optinally copy images to new directory for backup onto dvd:
-        newname= config["slideshow_name"].replace(" ", "_")
-        if config["copy"]:
-            cmd("mkdir -p " + config["outdir"]+"/"+newname+"_pics")
-            cmd("cp "+image[-1]+" "+config["outdir"]+"/"+newname+"_pics/")
-
-    def rotate(self, config):
-        # rotate image using image magick
-        effs = [ x.name for x in self.effects ]
-        if("rotate" in effs):
-            i=effs.index("rotate")
-
-            convert = ('convert ' + self.filename + ' -background transparent -bordercolor transparent -rotate ' + self.effects[i].param + ' -quality 100 ').replace("%","%%") + " %s"
-            self. filename = cmdif(self.filename, config["workdir"], self.extension, convert)
-            self.effects.pop(i)
-
 
     def create_slide(self, config):
         # create_slide $file $outfile $transparent
@@ -193,85 +174,6 @@ class Image(Element):
         convert = ("convert -size "+str(config["frame_width"])+"x"+str(config["frame_height"])+" "+self.filename+" -filter "+config["filtermethod"]+" -resize "+config["sq_to_dvd_pixels"]+ " -resize "+str(config["frame_width"])+"x"+str(config["frame_height"]) + " -type TrueColorMatte -depth 8 "+ config["sharpen"] +" "+postprocess+" miff:- | composite -compose src-over -gravity center -type TrueColorMatte -depth 8 - "+bg.filename).replace("%","%%") + " %s"
         self.extension = "ppm"
         self.filename  = cmdif(self.filename, config["workdir"], self.extension, convert)
-
-#        crop_img(ifile, ofile, config)
-#	checkforautocrop "$file"	
-#	if [ "$do_autocrop_h" -eq 1 ] ; then
-#		convert -size "$frame_width"x"$frame_height" "$file" \
-#			-filter $filtermethod \
-#			-resize "$sq_to_dvd_pixels" \
-#			-resize "$frame_width"x \
-#			-type TrueColorMatte -depth 8 \
-#			-gravity center \
-#			-crop "$frame_width"x"$frame_height"'+0!+0!' \
-#			$sharpen $postprocess +repage miff:- \
-#		| composite -compose src-over \
-#			-gravity center \
-#			-type TrueColorMatte -depth 8 - "$bg" "$output_file"
-#	elif [ "$do_autocrop_w" -eq 1 ] ; then
-#		convert -size "$frame_width"x"$frame_height" "$file" \
-#			-filter $filtermethod \
-#			-resize "$sq_to_dvd_pixels" \
-#			-resize x"$frame_height" \
-#			-type TrueColorMatte -depth 8 \
-#			-gravity center \
-#			-crop "$frame_width"x"$frame_height"'+0!+0!' \
-#			$sharpen $postprocess +repage miff:- \
-#		| composite -compose src-over \
-#			-gravity center -type TrueColorMatte -depth 8 - "$bg" "$output_file"
-#	else
-#		convert -size "$frame_width"x"$frame_height" "$file" \
-#			-filter $filtermethod \
-#			-resize "$sq_to_dvd_pixels" \
-#			-resize "$frame_width"x"$frame_height" \
-#			-type TrueColorMatte -depth 8 \
-#			$sharpen $postprocess miff:- \
-#		| composite -compose src-over \
-#			-gravity center -type TrueColorMatte -depth 8 - "$bg" "$output_file"
-#	fi
-
-
-#    elif thisline.find(":kenburns:") > -1:
-#        # found kenburns syntax:  1,5,1. convert to crop, kb, crop
-#	kb_image=`echo "${thisline}" | cut -d: -f1`
-#	kb_duration=`echo "${thisline}" | cut -d: -f2`
-#	kb_duration1=`echo $kb_duration | cut -s -d, -f1`
-#	kb_duration2=`echo $kb_duration | cut -s -d, -f2`
-#	kb_duration3=`echo $kb_duration | cut -s -d, -f3`
-#	kb_subtitle=`echo "${thisline}" | cut -d: -f3`
-#	kb_effect1=`echo "${thisline}" | cut -d: -f4`
-##	echo "duration1=$kb_duration1. duration2=$kb_duration2. duration3=$kb_duration3."
-#	if [ "$kb_effect1" == 'kenburns' ] && [ -n "$kb_duration1" ] && [ -n "$kb_duration2" ] && [ -n "$kb_duration3" ] ; then  # just to be sure
-#		kb_effect1_params=`echo "${thisline}" | cut -d: -f5 | awk -F' #' '{print $1}' | tr -d \[:blank:\]`
-#		kb_start_size=`echo $kb_effect1_params | awk -F';' '{print $1}'`
-#		kb_start_loc=`echo $kb_effect1_params | awk -F';' '{print $2}'`
-#		kb_end_size=`echo $kb_effect1_params | awk -F';' '{print $3}'`
-#		kb_end_loc=`echo $kb_effect1_params | awk -F';' '{print $4}'`
-##	    echo "[dvd-slideshow] Converting kenburns syntax $kb_duration to crop $kb_duration1,kb $kb_duration2, crop $kb_duration3"
-#	    logecho "[dvd-slideshow] Converting kenburns syntax $kb_duration to crop $kb_duration1,kb $kb_duration2, crop $kb_duration3"
-#		echo "$kb_image:$kb_duration1:$kb_subtitle:crop:$kb_start_size;$kb_start_loc" >> "$tmpdir"/"$tmptxtfile"
-#		echo "$kb_image:$kb_duration2:$kb_subtitle:kenburns:$kb_start_size;$kb_start_loc;$kb_end_size;$kb_end_loc"  >> "$tmpdir"/"$tmptxtfile"
-#		echo "$kb_image:$kb_duration3:$kb_subtitle:crop:$kb_end_size;$kb_end_loc"  >> "$tmpdir"/"$tmptxtfile"
-#	else
-#	   # Print lines in the temporary file
-#	   sed -n "$line"p "$input_txtfile" >> "$tmpdir"/"$tmptxtfile"
-#	fi
-
-        #if eff[-1] == 'kenburns': # add crop before/after kenburns
-        #    ## check for x,D,y duration syntax for kenburns effect:
-        #    duration_fields = duration[-1].split(",")
-        #    if len(duration_fields) >= 3:
-        #        duration1    = duration_fields[0]
-        #        duration[-1] = 
-        #        duration3    = duration_fields[2]
-        #    elif len(duration_fields) == 2:
-        #        duration1    = duration_fields[0]
-        #        duration[$i] = duration_fields[1]
-        #        duration3=0
-        #    else:
-        #        duration1=0
-        #        duration3=0
-
 
 ################################################################################
 class Background(Image):
@@ -295,8 +197,7 @@ class Background(Image):
         x = "%s:%s:%s:%s" % (self.name, self.duration/1000, self.subtitle, self.bg)
         return x
 
-    def initialize(self, prev, next, config):
-        self.prev = prev
+    def create_slide(self, config):
         self.extension="ppm"
 
         if self.bg == "":
@@ -308,7 +209,6 @@ class Background(Image):
         else: ## use plain black background with no picture
             convert = "convert -size "+str(config["dvd_width"])+'x'+str(config["dvd_height"])+" xc:"+self.bg+" -type TrueColorMatte -depth 8 %s"
             self.filename = cmdif(None, config["workdir"], self.extension, convert)
-        Element.initialize(self, prev, next, config)
 
 
 ################################################################################
@@ -327,8 +227,7 @@ class Title(Image):
     def __str__(self):
         return "%s:%s:%s:%s" % (self.name, self.duration/1000, self.title1, self.title2)
 
-    def initialize(self, prev, next, config):
-        Element.initialize(self, prev, next, config)
+    def create_slide(self, config):
         self.extension = "ppm"
         bg = self._find_background()
         fsize = config["title_font_size"]
