@@ -1,0 +1,12 @@
+#!/usr/bin/env python
+import SlideShow
+import SlideShow.pygtk
+import pygtk
+pygtk.require("2.0")
+import gtk
+
+config = SlideShow.Config()
+config.parse_argv()
+
+app = SlideShow.pygtk.SlideShowApp(config)
+gtk.main()

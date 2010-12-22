@@ -102,10 +102,9 @@ class Element():
         self.location = location
         self.frames_extended = 0
 
-    def initialize(self, key, prev, next, config):
+    def initialize(self, prev, next, config):
         self.next=next
         self.prev=prev
-        self.key = key
 
     def isa(self, type1):
         return issubclass(self.__class__, eval(type1))
@@ -118,6 +117,9 @@ class Element():
         else:
             raise Exception("Cannot find background")
 
+    def __str__(self):
+        return self.name
+
 ################################################################################
 class Image(Element):
     extensions = ['jpg', 'png', 'jpeg' ]
@@ -126,16 +128,26 @@ class Image(Element):
         if not(os.path.exists(filename)):
             raise Exception("Image "+filename+" does not exist.")
 
+        self.name      = os.path.basename(filename).replace("."+extension,"")
         self.filename  = filename
         self.extension = extension
         self.duration  = duration
         self.subtitle  = subtitle
         self.effects   = effects
+        self.filename_orig = self.filename
+        self.effects_orig  = list(effects)
         if(self.duration == 0):
             self.duration = 5000;
 
-    def initialize(self, key, prev, next, config):
-        Element.initialize(self, key, prev, next, config)
+    def __str__(self):
+        x = "%s:%s:%s" % (self.filename_orig, self.duration/1000, self.subtitle)
+        fx = ":".join([ "%s:%s" % (y.name,y.param) for y in self.effects_orig ])
+        if(fx):
+            x += ":" + fx
+        return x
+
+    def initialize(self, prev, next, config):
+        Element.initialize(self, prev, next, config)
         self.copy_file(config)
         self.rotate(config)
         if not("kenburns" in [e.name for e in self.effects]):
@@ -279,7 +291,11 @@ class Background(Image):
         if(self.bg and self.bg[0] != "#" and not(self.bg in Background.colors) and not(os.path.exists(self.bg))):
              raise Exception("Unknown background specified. Must be a file or color")
 
-    def initialize(self, key, prev, next, config):
+    def __str__(self):
+        x = "%s:%s:%s:%s" % (self.name, self.duration/1000, self.subtitle, self.bg)
+        return x
+
+    def initialize(self, prev, next, config):
         self.prev = prev
         self.extension="ppm"
 
@@ -292,7 +308,7 @@ class Background(Image):
         else: ## use plain black background with no picture
             convert = "convert -size "+str(config["dvd_width"])+'x'+str(config["dvd_height"])+" xc:"+self.bg+" -type TrueColorMatte -depth 8 %s"
             self.filename = cmdif(None, config["workdir"], self.extension, convert)
-        Element.initialize(self, key, prev, next, config)
+        Element.initialize(self, prev, next, config)
 
 
 ################################################################################
@@ -308,8 +324,11 @@ class Title(Image):
         if not(self.title1):
             raise Exception("No title text found.")
 
-    def initialize(self, key, prev, next, config):
-        Element.initialize(self, key, prev, next, config)
+    def __str__(self):
+        return "%s:%s:%s:%s" % (self.name, self.duration/1000, self.title1, self.title2)
+
+    def initialize(self, prev, next, config):
+        Element.initialize(self, prev, next, config)
         self.extension = "ppm"
         bg = self._find_background()
         fsize = config["title_font_size"]
@@ -337,6 +356,9 @@ class Transition(Element):
             raise Exception("Transition duration must be a positive number.")
         self.name = name
         self.duration = duration
+
+    def __str__(self):
+        return "%s:%s" % (self.name, self.duration/1000)
 
     def compose(self, imgs0, imgs1, config):
         N = int(config["framerate"] * self.duration / 1000.)
@@ -383,6 +405,7 @@ class Audio(Element):
         if not(os.path.exists(filename)):
             raise Exception("Audio file "+filename+" does not exist.")
 
+        self.name     = os.path.basename(filename).replace("."+extension,"")
         self.filename = filename
         self.extension = extension
         self.track = track
@@ -403,14 +426,25 @@ class Audio(Element):
         for effect in self.effects:
             if not(effect.name in ["fadein","fadeout"]):
                        raise Exception("ERROR: %s unknown audio effect. 'fadein' and 'fadeout' are only valid effects")
+        self.filename_orig = self.filename
+        self.effects_orig  = list(effects)
+
+    def __str__(self):
+        x = "%s:%s" % (self.filename_orig, self.track)
+        fx = ":".join([ "%s:%s" % (y.name,y.param) for y in self.effects_orig ])
+        if(fx):
+            x += ":" + fx
+        return x
+        x = "%s:%s" % (self.filename_orig, self.track)
+
 
     def check_installed(self, prog, msg):
         it=cmd("which "+prog+" 2> /dev/null")
         if not(it):
             raise Exception("ERROR: '"+prog+"' not found in path." + msg)
 
-    def initialize(self, key, prev, next, config):
-        Element.initialize(self, key, prev, next, config)
+    def initialize(self, prev, next, config):
+        Element.initialize(self, prev, next, config)
         self.transcode(config)
         self.stats()
 
@@ -427,7 +461,7 @@ class Audio(Element):
         log.info("Getting info on %s" % self.filename)
         txt = cmd("sox "+self.filename+" -n stat 2>&1")
         if txt.find("FAIL") >= 0:
-            raise Exception("sox is not compiled with support for %s" % (self.extension,))
+            raise Exception("sox is not compiled with support for %s. '%s'" % (self.extension, txt))
         for line in txt.split("\n"):
             key, val = map(str.strip, line.split(":", 1))
             self.stats = {}
@@ -437,7 +471,6 @@ class Audio(Element):
             log.debug(" %s : %s" % (key, val,))
 
     def transcode(self, config):
-        ofile = config["workdir"]+"/audio_track%s_%s.wav"%(self.track, self.key,)
         if self.extension == "mp3":
             log.info("decoding mp3 audio file %s... be patient..." % self.filename)
             self.extension = "wav"
@@ -510,8 +543,8 @@ class Silence(Audio):
         self.duration = duration
         self.track = track
 
-    def initialize(self, key, prev, next, config):
-        Element.initialize(self, key, prev, next, config)
+    def initialize(self, prev, next, config):
+        Element.initialize(self, prev, next, config)
         self.extension = "raw"
 
         sox = "sox -t raw -e signed -2 -c 2 -r "+str(config["audio_sample_rate"])+" /dev/zero -2 -s -c 2 -r "+str(config["audio_sample_rate"])+ " %s trim 0 "+ str(self.duration/1000.)

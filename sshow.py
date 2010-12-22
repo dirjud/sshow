@@ -31,6 +31,7 @@ def echo(x):
     log.info(x)
 
 def cmd(x):
+    print x
     log.debug(x)
     p = subprocess.Popen(x, shell=True, stdout=subprocess.PIPE)
     return p.stdout.read()[:-1] # chop off final carriage return
@@ -496,38 +497,6 @@ else:
 pipeline = Reader.DVDSlideshow(config["input_txtfile"]).get_pipeline(config)
 
 
-##############################################
-#  Set default fonts
-def find_font(font_name, font_dirs):
-    for font_dir in font_dirs:
-	font_path = cmd("find -L "+font_dir+" -name "+font_name+" | head -n 1")
-        if font_path:
-            return font_path
-    raise Exception("Font not found")
-        
-config["default_font"] = "Helvetica-Bold" # start with ImageMagick font and then see if other fonts are available.
-for font_name in config["default_fonts"]:
-    try:
-        config["default_font"] = find_font(font_name, config["font_dirs"])
-        break
-    except:
-        pass
-echo("default_font is " + config["default_font"])
-
-def set_font(config, name):
-    if(config.has_key(name)): # title font passed
-        if not(os.path.exists(config[name])):
-            try:
-                config[name] = find_font(config[name], config["font_dirs"])
-                print name, " found font"
-            except:
-                raise Exception("Cannot find %s font named %s in %s." % (name, config[name], config["font_dirs"]))
-    else:
-        config[name] = config["default_font"]
-    echo(name + " is "+config["title_font"])
-
-set_font(config, "title_font")
-set_font(config, "subtitle_font")
 
 
 
@@ -1202,4 +1171,4 @@ verbosity=0
 #	fi
 #else  # default mpeg2 video for dvd/vcd
 if config["ac3"]:
-    cmd("mplex -V "+config["video_buffer"]+" "+config["ignore_seq_end"]+" -f "+str(config["mplex_type"])+" -o "+config["outdir"]+"/"+config["slideshow_name"]+".vob "+config["workdir"]+"/video.mpg "+config["workdir"]+"/audio.ac3 2&> /dev/null")
+    cmd("mplex -V "+config["video_buffer"]+" "+config["ignore_seq_end"]+" -f "+str(config["mplex_type"])+" -o "+config["outdir"]+"/"+config["slideshow_name"]+".vob "+config["workdir"]+"/video.mpg "+config["workdir"]+"/audio.ac3")
