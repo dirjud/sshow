@@ -235,6 +235,7 @@
                 <child>
                   <object class="GtkDrawingArea" id="imagearea">
                     <property name="visible">True</property>
+                    <signal name="motion_notify_event" handler="on_mouse"/>
                   </object>
                   <packing>
                     <property name="position">0</property>

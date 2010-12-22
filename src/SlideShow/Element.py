@@ -120,6 +120,9 @@ class Element():
     def __str__(self):
         return self.name
 
+def encode(x):
+    return x.replace(":","\:")
+
 ################################################################################
 class Image(Element):
     extensions = ['jpg', 'png', 'jpeg' ]
@@ -140,7 +143,7 @@ class Image(Element):
             self.duration = 5000;
 
     def __str__(self):
-        x = "%s:%s:%s" % (self.filename_orig, self.duration/1000, self.subtitle)
+        x = "%s:%g:%s" % (encode(self.filename_orig), self.duration/1000., encode(self.subtitle))
         fx = ":".join([ "%s:%s" % (y.name,y.param) for y in self.effects_orig ])
         if(fx):
             x += ":" + fx

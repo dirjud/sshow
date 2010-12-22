@@ -208,6 +208,10 @@ class Config(dict):
         if self.has_key("input_txtfile") and not(os.path.exists(self["input_txtfile"])):
             raise Exception("Input file "+ self["input_txtfile"] + " does not exist.")
 
+def cmd(x):
+    log.debug(x)
+    p = subprocess.Popen(x, shell=True, stdout=subprocess.PIPE)
+    return p.stdout.read()[:-1] # chop off final carriage return
 
 def read_pipeline(filename, config):
     import os
@@ -248,6 +252,7 @@ def find_font(font_name, font_dirs):
         
 
 def set_font(config, name):
+    import os
     if(config.has_key(name)): # title font passed
         if not(os.path.exists(config[name])):
             try:
