@@ -44,6 +44,7 @@ class SlideShowApp(object):
 
         self.element = None
         self.settings = None
+        self.dirty = False
         if(self.config.has_key("input_txtfile")):
             self.load_pipeline(self.config["input_txtfile"])
         else:
@@ -52,18 +53,17 @@ class SlideShowApp(object):
         self.pipeview_popup = builder.get_object("pipeview_popup")
         self.window.show()
 
+    def insert_element(self, element):
+        if element:
+            iter = self.pipelist.insert_after(self.pipelist.get_iter(self.selected_path), [element, element])
+            self.pipeview.set_cursor(self.pipelist.get_path(iter))
+
     def on_new_image(self, evt):
-        dlg = self.builder.get_object("new_image_dlg")
-        dlg.set_modal(True)
-        settings = Settings.ImageSettings(self.builder.get_object("new_image_workbox"), self.config)
-        settings.create()
-        response = dlg.run()
-        print response
-        dlg.hide()
-
-
+        self.insert_element(Settings.ImageSettings.create(self.window))
+            
     def on_new_transition(self, evt):
-        pass
+        self.insert_element(Settings.TransitionSettings.create(self.window))
+
     def on_new_background(self, evt):
         pass
     def on_new_title(self, evt):
@@ -71,9 +71,11 @@ class SlideShowApp(object):
     def on_new_music(self, evt):
         pass
     def on_new_comment(self, evt):
-        pass
+        self.insert_element(SlideShow.Element.Comment("generated","#"))
+
     def on_new_empty_line(self, evt):
-        pass
+        self.insert_element(SlideShow.Element.EmptyLine("generated"))
+
     def on_new_config(self, evt):
         pass
 
@@ -106,12 +108,6 @@ class SlideShowApp(object):
             self.pipelist.remove(self.pipelist.get_iter(path))
         self.select_none()
 
-    def on_element_insert_before(self, event):
-        print "insert_before"
-
-    def on_element_insert_after(self, event):
-        print "insert_after"
-
     def on_pipeview_button_press(self, view, event):
         if event.button == 3:
             model, pathlist = self.pipeview.get_selection().get_selected_rows()
@@ -121,9 +117,7 @@ class SlideShowApp(object):
                 if path not in pathlist:
                     view.grab_focus()
                     view.set_cursor( path, col, 0)
-                
-
-            self.pipeview_popup.popup(None, None, None, event.button, event.time)
+            self.pipeview_popup.popup(None,None,None, event.button, event.time)
             return True
         
     def select_none(self):
@@ -131,7 +125,6 @@ class SlideShowApp(object):
         if self.settings:
             self.settings.remove()
             self.settings = None
-        self.on_paint()
 
     def on_cursor_changed(self, pipeview):
         path, col = pipeview.get_cursor()
@@ -143,23 +136,17 @@ class SlideShowApp(object):
             if self.settings:
                 self.settings.remove()
 
-            if(self.element.__class__ is SlideShow.Element.Image):
-                self.settings = Settings.ImageSettings(self.workbox, self.config, self.element_updated)
-            else:
+            
+            klass = "Settings." + str(self.element.__class__).split(".")[-1] + "Settings"
+            try:
+                self.settings = eval(klass)(self.workbox, self.config, self.element_updated)
+            except AttributeError:
                 self.settings = None
-            print "settings=",self.settings
+
 
         if(self.settings):
             self.settings.update(self.element)
-
-        self.on_paint()
-
-
-
-    def on_paint(self):
-        if self.settings:
             self.settings.on_paint()
-
 
     def on_exit(self, evt=None):
         gtk.main_quit()
@@ -171,6 +158,7 @@ class SlideShowApp(object):
         except:
             pass
         self.window.set_title("SlideShow: Untitled")
+        self.dirty = False
     
     def on_open(self, evt=None):
         dlg = gtk.FileChooserDialog(
@@ -198,6 +186,7 @@ class SlideShowApp(object):
             self.window.get_window().set_cursor(gtk.gdk.Cursor(gtk.gdk.WATCH))
             try:
                 self.load_pipeline(filename)
+                self.dirty=False
             finally:
                 self.window.get_window().set_cursor(None)
 
@@ -207,6 +196,7 @@ class SlideShowApp(object):
             element = row[1]
             f.write(str(element)+"\n")
         f.close()
+        self.dirty = False
     
     def on_save_as(self, evt=None):
         dlg = gtk.FileChooserDialog(
@@ -234,22 +224,23 @@ class SlideShowApp(object):
             self.on_save()
             self.load_pipeline(self.config["input_txtfile"])
 
-
     def load_pipeline(self, filename):
         """Loads 'filename' as current pipeline"""
-
         self.pipeline = SlideShow.read_pipeline(filename, self.config)
         SlideShow.initialize_pipeline(self.pipeline, self.config)
         self.pipelist.clear()
         for element in self.pipeline:
             self.pipelist.append([element, element])
         self.window.set_title("SlideShow: "+os.path.basename(self.config["input_txtfile"]))
+        self.dirty = True
 
     def row_edited_cb(self, cell, path, text, user_data=None):
         element = SlideShow.Reader.DVDSlideshow.parse_line(text, self.config, str(path))
         self.pipelist[path] = [ element, element ]
         self.on_cursor_changed(self.pipeview)
+        self.dirty = True
 
     def element_updated(self):
         self.pipelist[self.selected_path] = [ self.element, self.element ]
+        self.dirty = True
 

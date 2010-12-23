@@ -6,71 +6,234 @@ import gtk, gobject
 
 log = logging.getLogger(__name__)
 
-class ImageSettings(object):
-    def dev_null(self, *args, **kw):
+class Settings(object):
+    def __init__(self, box, config, element_updated):
+        self.box = box
+        self.config = config
+        self.element_updated = element_updated
+
+    def remove(self):
+        self.box.remove(self.top)
+    
+    def update(self, element):
+        self.element=element
+        self.sync_from_element_to_gui()
+
+    def on_paint(self):
         pass
 
-    def __init__(self, box, config, element_updated=None):
+###############################################################################
+class TitleSettings(Settings):
+    @staticmethod
+    def create(parent):
+        return SlideShow.Element.Transition("generated", "title", 5000, "Put Text Here", "")
+
+    def __init__(self, box, config, element_updated):
+        Settings.__init__(self, box, config, element_updated)
+
+        builder = gtk.Builder()
+        path = "/".join(__file__.split("/")[:-1])
+        builder.add_from_file(path+"/titlesettings.glade")
+
+        sigs = {}
+        for sig in ["on_duration", "on_title", "on_subtitle"]:
+            sigs[sig] = eval("self."+sig)
+
+        builder.connect_signals(sigs)
+        
+        self.top      = builder.get_object("topbox")
+        self.duration = builder.get_object("entry_duration")
+        self.title    = builder.get_object("entry_title")
+        self.subtitle = builder.get_object("entry_title2")
+        self.imagearea= builder.get_object("imagearea")
+
+        self.imagearea.set_events(gtk.gdk.ALL_EVENTS_MASK)
+        self.imagearea.connect("expose-event", self.imagearea_expose)
+        
+        self.box.pack_start(self.top, expand=True, fill=True, padding=2)
+
+        self.element    = None
+        self.curimg     = None
+
+    def sync_from_element_to_gui(self):
+        self.duration.set_text(str(self.element.duration/1000.))
+        self.title.set_text(self.element.title1)
+        self.subtitle.set_text(self.element.title2)
+        self.element.create_slide(self.config)
+        self.on_paint()
+
+    def on_duration(self, *args):
+        try:
+            dur = float(self.duration.get_text())
+            self.element.duration = int(dur * 1000)
+            self.element_updated()
+        except:
+            self.duration.set_text(str(self.element.duration/1000.))
+
+    def on_title(self, *args):
+        self.element.title1 = self.title.get_text()
+        self.element_updated()
+        self.element.create_slide(self.config)
+        self.on_paint()
+
+    def on_subtitle(self, *args):
+        self.element.title2 = self.subtitle.get_text()
+        self.element_updated()
+        self.element.create_slide(self.config)
+        self.on_paint()
+
+    def imagearea_expose(self, area, event):
+        self.on_paint()
+        return True
+
+    def on_paint(self):
+        d = self.imagearea.window
+        wd, hd = d.get_size()
+        ratiod = wd / float(hd)
+
+        # clear background first
+        d.draw_rectangle(d.new_gc(foreground=gtk.gdk.Color(),
+                                  background=gtk.gdk.Color()),
+                         True, 0, 0, wd, hd)
+        
+        if(wd == 1 and hd == 1):
+            return
+
+        # draw image
+        if (self.element and hasattr(self.element, "filename")):
+            if(self.curimg != self.element.filename):
+                # this is a new image
+                self.curimg = self.element.filename
+                self.pixbuf_orig = orig = gtk.gdk.pixbuf_new_from_file(self.element.filename)
+                dirty = True
+            else:
+                orig = self.pixbuf_orig
+                dirty = False
+
+            wo = orig.get_width(); ho = orig.get_height();
+            ratioo = wo / float(ho)
+            
+            N = 9
+            if(ratioo > ratiod):
+                wp = wd*N/10
+                hp = wp * ho / wo
+            else:
+                hp = hd*N/10
+                wp = hp * wo / ho
+
+            if dirty or not(self.pixbuf) or wp != self.pixbuf.get_width() or hp != self.pixbuf.get_height():
+                self.pixbuf = orig.scale_simple(wp, hp, gtk.gdk.INTERP_BILINEAR)
+
+            offx = (wd-wp)/2
+            offy = (hd-hp)/2
+            d.draw_pixbuf(None, self.pixbuf, 0, 0, offx, offy)
+
+###############################################################################
+class TransitionSettings(Settings):
+
+    @staticmethod
+    def create(parent):
+        return SlideShow.Element.Transition("generated", "crossfade", 1000)
+
+    def __init__(self, box, config, element_updated):
+        Settings.__init__(self, box, config, element_updated)
+        self.top = gtk.Table(2,2)
+
+        self.transition = gtk.combo_box_new_text()
+        self.transitions = SlideShow.Element.Transition.names
+        for t in self.transitions:
+            self.transition.append_text(t)
+
+        self.duration   = gtk.Entry()
+
+        self.box.pack_start(self.top, expand=False, fill=True, padding=2)
+
+        label = gtk.Label("Transition:")
+        self.top.attach(label, 0,1,0,1, xoptions=gtk.FILL, yoptions=gtk.FILL)
+        label.show()
+        self.top.attach(self.transition, 1,2,0,1, xoptions=gtk.FILL, yoptions=gtk.FILL)
+
+        label = gtk.Label("Duration:")
+        self.top.attach(label, 0,1,1,2, xoptions=gtk.FILL, yoptions=gtk.FILL)
+        label.show()
+        self.top.attach(self.duration, 1,2,1,2,xoptions=gtk.FILL, yoptions=gtk.FILL)
+
+        self.top.show()
+        self.transition.show()
+        self.duration.show()
+
+        self.element    = None
+
+        self.duration.connect("activate", self.on_duration)
+        self.duration.connect("focus-out-event", self.on_duration)
+        self.transition.connect("changed", self.on_transition)
+
+    def sync_from_element_to_gui(self):
+        self.duration.set_text(str(self.element.duration/1000.))
+        i = self.transitions.index(self.element.name)
+        self.transition.set_active(i)
+
+    def on_duration(self, *args):
+        try:
+            dur = float(self.duration.get_text())
+            self.element.duration = int(dur * 1000)
+            self.element_updated()
+        except:
+            self.duration.set_text(str(self.element.duration/1000.))
+
+    def on_transition(self, *args):
+        if self.transition.get_active() != self.transitions.index(self.element.name):
+            self.element.name = self.transitions[self.transition.get_active()]
+            self.element_updated()
+
+###############################################################################
+class ImageSettings(Settings):
+
+    @staticmethod
+    def create(parent):
+        filename = ImageSettings.get_filename(parent)
+        if filename:
+            extension = filename.split(".")[-1]
+            element = SlideShow.Element.Image("generated", filename, extension, 5000, "", [])
+            return element
+
+    def __init__(self, box, config, element_updated):
         self.box = box
         self.curimg = None
         self.config = config
-        if not(element_updated):
-            self.element_updated = self.dev_null
-        else:
-            self.element_updated = element_updated
+        self.element_updated = element_updated
             
+        builder = gtk.Builder()
+        path = "/".join(__file__.split("/")[:-1])
+        builder.add_from_file(path+"/imagesettings.glade")
 
-        self.top = gtk.VBox()
+        sigs = {}
+        for sig in ["on_duration", "on_subtitle", "on_filename", "on_fx_delete", "on_fx_new_kenburns", "on_fx_new_crop", "on_fx_new_text", "on_filename_clicked", "on_fxview_button_press" ]:
+            sigs[sig] = eval("self."+sig)
 
-
-        table = gtk.Table(rows=3,columns=3, homogeneous=False)
-
-        for i,name in enumerate(["Filename", "Duration", "Subtitle"]):
-            label = gtk.Label(name+":")
-            label.set_property("justify", gtk.JUSTIFY_RIGHT)
-            table.attach(label, 0, 1, i, i+1, xoptions=0)
-            label.show()
-
-
-        hbox = gtk.HBox()
-        self.filename = gtk.Entry()
-        self.filename.connect("activate",        self.on_filename)
-        self.filename.connect("focus-out-event", self.on_filename)
-        hbox.pack_start(self.filename)
-        self.filename.show()
-        filename_button = gtk.Button("...")
-        hbox.pack_start(filename_button, False)
-        filename_button.connect("clicked", self.on_filename_button)
-        filename_button.show()
-        table.attach(hbox, 1, 2, 0, 1)
-        hbox.show()
+        builder.connect_signals(sigs)
         
-        self.duration = gtk.Entry()
-        self.duration.connect("activate",        self.on_duration)
-        self.duration.connect("focus-out-event", self.on_duration)
-        table.attach(self.duration, 1,2,1,2)
-        self.duration.show()
+        self.top      = builder.get_object("topbox")
+        self.filename = builder.get_object("entry_filename")
+        self.duration = builder.get_object("entry_duration")
+        self.subtitle = builder.get_object("entry_subtitle")
+        self.fxview   = builder.get_object("fxview")
+        self.imagearea= builder.get_object("imagearea")
+        self.fxpopup  = builder.get_object("fxpopup")
+        # setup image display area
+        self.imagearea.set_events(gtk.gdk.ALL_EVENTS_MASK)
+        self.imagearea.connect("expose-event", self.imagearea_expose)
+        self.imagearea.connect("button-press-event", self.on_button_press)
+        self.imagearea.connect("button-release-event", self.on_button_release)
+        self.imagearea.connect("motion-notify-event", self.on_mouse)
 
-        self.subtitle = gtk.Entry()
-        self.subtitle.connect("activate",        self.on_subtitle)
-        self.subtitle.connect("focus-out-event", self.on_subtitle)
-        table.attach(self.subtitle, 1,2,2,3)
-        self.subtitle.show()
-
-        self.fxstore = gtk.ListStore(str,str)
-        
-        self.fxview = gtk.TreeView(self.fxstore)
+        # setup effects list view
+        self.fxstore  = gtk.ListStore(str,str)
+        self.fxview.set_model(self.fxstore)
         namecol = gtk.TreeViewColumn("Effect")
         self.fxview.append_column(namecol)
-        cell = gtk.CellRendererCombo()
-        cell.set_property("has-entry", False)
-        fxs = gtk.ListStore(str)
-        fxs.append(["kenburns",])
-        fxs.append(["overlay",])
-        cell.set_property("editable", True)
-        cell.set_property("model", fxs)
-        cell.set_property("text-column", 0)
-        #cell.connect('changed', self.on_fx)
+        cell = gtk.CellRendererText()
+        cell.set_property("editable", False)
         namecol.pack_start(cell, True)
         namecol.add_attribute(cell, "text", 0)
 
@@ -82,36 +245,17 @@ class ImageSettings(object):
         paramcol.pack_start(cell, True)
         paramcol.add_attribute(cell, 'text', 1)
         
-        table.attach(self.fxview, 2,3,0,3)
-        self.fxview.show()
-
-
-        self.imagearea = gtk.DrawingArea()
-        self.top.pack_start(self.imagearea, expand=True, fill=True, padding=0)
-        self.imagearea.show()
-        self.imagearea.set_events(gtk.gdk.ALL_EVENTS_MASK)
-        self.imagearea.connect("expose-event", self.imagearea_expose)
-        self.imagearea.connect("button-press-event", self.on_button_press)
-        self.imagearea.connect("button-release-event", self.on_button_release)
-        self.imagearea.connect("motion-notify-event", self.on_mouse)
-
-
-        self.top.pack_start(table, expand=False, fill=False, padding=0)
-        table.show()
-        self.top.show()
 
         self.box.pack_start(self.top)
-        self.box.show()
 
-        self.kb1move = self.kb1scale = self.kb2scale = self.kb2move = []
-        self.dragging = False
+        self.kb1move    = self.kb1scale = self.kb2scale = self.kb2move = []
+        self.dragging   = False
         self.drag_state = None
-        self.element = None
+        self.element    = None
 
     def imagearea_expose(self, area, event):
         self.on_paint()
         return True
-
 
     def on_duration(self, *args):
         try:
@@ -135,9 +279,10 @@ class ImageSettings(object):
             else:
                 self.filename.set_text(self.element.filename_orig)
 
-    def get_filename(self):
+    @staticmethod
+    def get_filename(parent):
         dlg = gtk.FileChooserDialog(
-            title="Open", parent=self.imagearea.get_toplevel(),
+            title="Open", parent=parent,
             action=gtk.FILE_CHOOSER_ACTION_OPEN, 
             buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL,
                      gtk.STOCK_OPEN, gtk.RESPONSE_ACCEPT,),
@@ -150,17 +295,14 @@ class ImageSettings(object):
         dlg.destroy()
         return filename
 
-    def on_filename_button(self, *args):
-        filename = self.get_filename()
+    def on_filename_clicked(self, *args):
+        filename = ImageSettings.get_filename(self.imagearea.get_toplevel())
         if filename:
             self.filename.set_text(filename)
             self.element.update_filename(filename)
             self.on_paint()
         
-    def remove(self):
-        self.box.remove(self.top)
-
-    def sync_element_to_gui(self):
+    def sync_from_element_to_gui(self):
         self.filename.set_text(self.element.filename_orig)
         self.duration.set_text(str(self.element.duration/1000.))
         self.subtitle.set_text(self.element.subtitle)
@@ -168,16 +310,37 @@ class ImageSettings(object):
         for fx in self.element.effects:
             self.fxstore.append([fx.name, fx.param])
         
-    def update(self, element):
-        self.element=element
-        self.sync_element_to_gui()
+    def on_fx_delete(self, evt):
+        model, iter = self.fxview.get_selection().get_selected()
+        if iter:
+            i = model.get_path(iter)[0]
+            self.element.effects.pop(i)
+            model.remove(iter)
+            self.element_updated()
+            self.on_paint()
 
-    def create(self):
-        filename = self.get_filename()
-        extension = filename.split(".")[-1]
-        self.element = SlideShow.Element.Image("generated", filename, extension, 5000, "", [])
-        self.sync_element_to_gui()
-        return self.element
+    def on_fx_new_kenburns(self, evt):
+        if "kenburns" in [ fx.name for fx in self.element.effects ]:
+            return
+        fx = SlideShow.Element.Effect("kenburns", "60%;40%,40%;85%;50%,50%")
+        self.element.effects.append(fx)
+        self.fxstore.append([fx.name, fx.param])
+        self.element_updated()
+        self.on_paint()
+
+    def on_fx_new_crop(self, evt):
+        pass
+    def on_fx_new_text(self, evt):
+        pass
+    def on_fxview_button_press(self, view, event):
+        if event.button == 3:
+            pthinfo = view.get_path_at_pos(int(event.x), int(event.y))
+            if pthinfo is not None:
+                path, col, cellx, celly = pthinfo
+                view.grab_focus()
+                view.set_cursor( path, col, 0)
+            self.fxpopup.popup(None,None,None, event.button, event.time)
+            return True
 
     def on_paint(self):
         d = self.imagearea.window

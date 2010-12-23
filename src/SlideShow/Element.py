@@ -164,13 +164,12 @@ class Image(Element):
         self.subtitle  = subtitle
         self.effects   = effects
         self.filename_orig = self.filename
-        self.effects_orig  = list(effects)
         if(self.duration == 0):
             self.duration = 5000;
 
     def __str__(self):
         x = "%s:%g:%s" % (encode(self.filename_orig), self.duration/1000., encode(self.subtitle))
-        fx = ":".join([ "%s:%s" % (y.name,y.param) for y in self.effects_orig ])
+        fx = ":".join([ "%s:%s" % (y.name,y.param) for y in self.effects ])
         if(fx):
             x += ":" + fx
         return x
@@ -259,6 +258,7 @@ class Title(Image):
     def create_slide(self, config):
         self.extension = "ppm"
         bg = self._find_background()
+        bg.create_slide(config)
         fsize = config["title_font_size"]
         fcolor = config["title_font_color"]
 
@@ -286,7 +286,7 @@ class Transition(Element):
         self.duration = duration
 
     def __str__(self):
-        return "%s:%s" % (self.name, self.duration/1000)
+        return "%s:%g" % (self.name, self.duration/1000.)
 
     def compose(self, imgs0, imgs1, config):
         N = int(config["framerate"] * self.duration / 1000.)
@@ -355,11 +355,10 @@ class Audio(Element):
             if not(effect.name in ["fadein","fadeout"]):
                        raise Exception("ERROR: %s unknown audio effect. 'fadein' and 'fadeout' are only valid effects")
         self.filename_orig = self.filename
-        self.effects_orig  = list(effects)
 
     def __str__(self):
         x = "%s:%s" % (self.filename_orig, self.track)
-        fx = ":".join([ "%s:%s" % (y.name,y.param) for y in self.effects_orig ])
+        fx = ":".join([ "%s:%s" % (y.name,y.param) for y in self.effects ])
         if(fx):
             x += ":" + fx
         return x
