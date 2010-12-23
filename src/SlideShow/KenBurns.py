@@ -413,9 +413,9 @@ def kenburns(config, params, ifile, frames, progress):
     ## start loop for kenburns effect: #################################
     imgs = []
 
-    progress.initialize("Ken Burns")
+    progress.task_start(frames, "Ken Burns")
     for fr in range(0, frames, stepsize):
-        progress.update(fr, frames/stepsize)
+        progress.task_update(fr)
 
     	if fr <= F1:  # region 1   x0,y0,x1,y1 are floating point numbers
     	    x0 = xs0 + V0x/2. * (fr - F1/pi * math.sin(pi*fr/F1))
@@ -545,5 +545,5 @@ def kenburns(config, params, ifile, frames, progress):
     	#	fi
     	#fi
     	#progressbar $(( $fr - $startframe +1 )) $(( $endframe - $startframe + 1 )) "$c"
-    progress.done()
+    progress.task_done()
     return imgs

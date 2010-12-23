@@ -1,16 +1,16 @@
 import Reader
-import logging
+import logging, time, sys, os, optparse, subprocess
 log = logging.getLogger(__name__)
 
 class Config(dict):
     def __init__(self):
-        import os
         dict.__init__(self)
         defaults = dict(
             outdir       = os.path.abspath("."),
             audiosmp     = 1,  # default to do audio in background...
             bgfile       = "black",
 
+            gui          = 0,
             debug        = 0, # 0-2
             pal          = 0,  
             copy         = 0,
@@ -147,8 +147,8 @@ class Config(dict):
     def parse_argv(self):
         """Updates this config with variables passed on the command line"""
 
-        import sys, optparse, os
         self.parser = parser = optparse.OptionParser()
+        parser.add_option("--gui", dest="gui", default=None, action="store_true", help="Launch gui and use tool interactively")
         parser.add_option("-o", "--outdir",    dest="outdir", default=None, help="Directory where work directory, the final .vob, and dvdauthor .xml files will be written.  Default is to write in the directory where sshow was run.")
         parser.add_option("--themes",          dest="print_themes", action="store_true", default=False, help="print available themes")
         
@@ -208,13 +208,100 @@ class Config(dict):
         if self.has_key("input_txtfile") and not(os.path.exists(self["input_txtfile"])):
             raise Exception("Input file "+ self["input_txtfile"] + " does not exist.")
 
+class Progress(object):
+    def hms(self, t):
+        s = time.time() - t
+        hours = int(s / 3600)
+        mins  = int((s - (hours * 3600)) / 60)
+        secs  = int((s - (hours * 3600) - (mins * 60)))
+        tsec  = int((s - (hours * 3600) - (mins * 60) - secs ) * 10)
+        return "%02d:%02d:%02d.%d" % (hours, mins, secs, tsec)
+
+    def overall_start(self, N):
+        self.overall_N = N
+        self.overall_time = time.time()
+
+    def overall_update(self, i, desc):
+        print "*%d/%d %s Elapsed Time %s" % (i,self.overall_N, desc, self.hms(self.overall_time))
+
+    def overall_done(self):
+        print "Done: Elapsed Time: %s" % (self.hms(self.overall_time),)
+
+    def task_start(self, N, desc):
+        self.task_desc = desc
+        self.task_N = N
+        self.task_time = time.time()
+        self.task_update(0)
+
+    def task_update(self, i):
+        M = 25
+        m = int(round(M*i/float(self.task_N)))
+        sys.stderr.write(("  %15s: |" + "="*m + " "*(M-m) + "| %d/%d (%3.0f%%) %s\r") % (self.task_desc, i, self.task_N, (100.*i/self.task_N), self.hms(self.task_time)))
+
+    def task_done(self):
+        sys.stderr.write("   %15s: Elapsed Time: %s                            \n" % (self.task_desc, self.hms(self.task_time)))
+
+
 def cmd(x):
     log.debug(x)
     p = subprocess.Popen(x, shell=True, stdout=subprocess.PIPE)
     return p.stdout.read()[:-1] # chop off final carriage return
 
+def check_system(config):
+    ## Check for required programs
+    progver=cmd("mplex 2>&1 | grep version | awk '{ print $4 }'")
+    if progver: log.debug("Found mjpegtools version" + progver)
+    it=cmd("which ppmtoy4m 2> /dev/null")
+    if not(it): # no ppmtoy4m
+        raise Exception("ERROR:  no mjpegtools found for audio processing.  You need to download and install mjpegtools. http://mjpegtools.sourceforge.net")
+    
+    if cmd("ppmtoy4m -S 420mpeg2 xxxxx 2>&1 | grep xxxxx"):
+        log.debug("Using mjpegtools subsampling -S 420mpeg2")
+        config["subsample"] ='420mpeg2'
+    else:
+        log.debug("Using mjpegtools subsampling -S 420_mpeg2")
+        config["subsample"] ='420_mpeg2'
+    	
+    #checkforprog sox
+    progver=cmd("sox -h 2>&1 | head -n 1 | awk '{ print $3 }'")
+    log.debug("Found sox version " + progver)
+    it=cmd("which sox 2> /dev/null")
+    if not(it): # no sox
+        raise Exception("ERROR:  no sox found for audio processing. You need to download and install sox. http://sox.sourceforge.net")
+    
+    #checkforprog convert
+    progver=cmd("convert -help | head -n 1 | awk '{ print $3 }'")
+    log.debug("Found ImageMagick version " + progver)
+    it=cmd("which convert 2> /dev/null")
+    if not(it): # no convert
+        raise Exception("ERROR:  no ImageMagick found for audio processing. You need to download and install ImageMagick. http://ImageMagick.sourceforge.net")
+    
+    #checkforprog dvdauthor
+    progver=cmd("dvdauthor -h 2>&1 | head -n 1 | awk '{ print $3 }'")
+    log.debug("Found dvdauthor version " + progver)
+    it=cmd("which dvdauthor 2> /dev/null")
+    if not(it): # no dvdauthor
+        raise Exception("ERROR:  no dvdauthor found for audio processing. You need to download and install dvdauthor. http://dvdauthor.sourceforge.net")
+    
+    # ffmpeg
+    it=cmd("which ffmpeg 2> /dev/null")
+    if not(it):
+        # no ffmpeg!  use mp2 audio instead:
+        log.warn("No ffmpeg found for AC3 audio encoding. Using MP2 audio instead. MP2 audio is less compatible with DVD player hardware. http://ffmpeg.sourceforge.net")
+        config["ac3"] = 0
+        config["mpeg_encoder"] = 'mpeg2enc'
+    else:
+        # found ffmpeg
+        progver = cmd("ffmpeg -version 2>&1").split(",",1)[0]
+        log.debug("Found "+ progver)
+        ## check to see if we have mpeg2video output option:
+        it=cmd("ffmpeg -f mpeg2video 2>&1 | grep 'Unknown input or output format: mpeg2video'")
+        if it:
+            log.warn("ffmpeg is not compiled with the mpeg2video option required for making dvds!  Using mpeg2enc instead.")
+            config["mpeg_encoder"]='mpeg2enc'
+
+
 def read_pipeline(filename, config):
-    import os
     if not(os.path.exists(filename)):
         raise Exception(filename + " file cannot be opened.")
 
@@ -223,7 +310,6 @@ def read_pipeline(filename, config):
 
     # change to directory of the input file
     os.chdir(os.path.dirname(os.path.abspath(filename)))
-    
 
     # set the slideshow name in the config to default as the basename
     # of input file
@@ -236,9 +322,10 @@ def read_pipeline(filename, config):
     else:
         config["ffmpeg_out"] = '/dev/null'
 
-    config["workdir"] = config["outdir"]+"/"+config["slideshow_name"] + "_work"
+    config["workdir"] = os.path.abspath("./"+config["slideshow_name"] + "_work")
     if not(os.path.exists(config["workdir"])):
         os.mkdir(config["workdir"])
+        log.debug("Created work directory " + config["workdir"])
     return Reader.DVDSlideshow(filename).get_pipeline(config)
 
 ##############################################
@@ -252,7 +339,6 @@ def find_font(font_name, font_dirs):
         
 
 def set_font(config, name):
-    import os
     if(config.has_key(name)): # title font passed
         if not(os.path.exists(config[name])):
             try:
@@ -281,6 +367,47 @@ def prevSlide(pos, pipeline):
         if isSlide(element):
             return element
     raise Exception("No prev slide")
+
+def find_prev_slide(element):
+    if element.prev:
+        if isSlide(element.prev):
+            return element.prev
+        else:
+            return find_prev_slide(element.prev)
+    else:
+        return None
+
+def find_prev_transition(element):
+    """Walks the pipeline backward starting with element until it
+    finds a transition or another slide. If it finds a transition, it
+    returns the transition element. If it reaches the beginning or a
+    slide, it returns None. This is useful for finding a transition
+    between two slides (if one exists)."""
+    if element.prev:
+        if element.prev.isa("Transition"):
+            return element.prev
+        elif isSlide(element.prev):
+            return None
+        else:
+            return find_next_transition(element.prev)
+    else:
+        return None
+
+def find_next_transition(element):
+    """Walks the pipeline forward starting with element until it
+    finds a transition or another slide. If it finds a transition, it
+    returns the transition element. If it reaches the end or a
+    slide, it returns None. This is useful for finding a transition
+    between two slides (if one exists)."""
+    if element.next:
+        if element.next.isa("Transition"):
+            return element.next
+        elif isSlide(element.next):
+            return None
+        else:
+            return find_next_transition(element.next)
+    else:
+        return None
 
 def isNextTransition(pos, pipeline):
     for element in pipeline[pos+1:]:
@@ -527,3 +654,251 @@ def initialize_pipeline(pipeline, config):
             raise Exception("%s: %s" % (element.location, str(e)))
 
     return dict(audio_length=audio_length, video_length=video_length, video_element_count=video_element_count)
+
+
+
+def encode(encoder, image, numframes, config):
+    ppm_cmd = "ppmtoy4m -v "+str(config["verbosity"])+" -n "+str(numframes)+" -r -S "+config["subsample"]+" -F "+config["ppmtoy4m_frc"]+" -A "+config["ppmtoy4m_aspect"]+" -I p "+image
+    #log.info(ppm_cmd)
+    p = subprocess.Popen(ppm_cmd, shell=True, stdout=subprocess.PIPE)
+    if(config["yuvfirstfile"]):
+        config["yuvfirstfile"] = 0
+    else:
+        p.stdout.readline() # strip first line of yuv data
+
+    encoder.stdin.write(p.stdout.read())
+
+def num_frames(config, duration):
+    return int(config["framerate"] * duration / 1000)
+
+def split_imgs(imgs, prev_frames, curr_frames, next_frames):
+    count = 0
+    prev = []
+    curr = []
+    next = []
+    prevN = prev_frames
+    currN = prev_frames + curr_frames
+    nextN = prev_frames + curr_frames + next_frames
+    state = "prev"
+
+    for img in imgs:
+        available = img[1]
+        if state == "prev":
+            if count == prevN:
+                state = "curr"
+            elif count + available > prevN:
+                state = "curr"
+                prev.append( (img[0], prevN-count) )
+                available -= prevN - count
+                count     += prevN - count
+            else:
+                prev.append( (img[0], available) )
+                count += available
+        
+        if state == "curr":
+            if count == currN:
+                state = "next"
+            elif count + available > currN:
+                state = "next"
+                curr.append( (img[0], currN-count) )
+                available -= currN - count
+                count     += currN - count
+            else:
+                curr.append( (img[0], available) )
+                count += available
+
+        if state == "next":
+            if available:
+                next.append( (img[0], available) )
+                count += available
+
+    return prev, curr, next
+
+def build(first_element, config, progress):
+    element=first_element
+    slide_count = 0
+    while element:
+        if isSlide(element): slide_count += 1
+        element = element.next
+    progress.overall_start(slide_count)
+
+    if config["mpeg_encoder"] == 'ffmpeg':
+        if config["output_format"] == 'flv':
+            # do pass one first, then add audio at the end during pass 2?
+            # don't do mplex, do second pass instead.
+            log.info("Exporting .flv file")
+            ffmpeg_args = "-f flv "+config["workdir"]+"/video.flv"
+        elif config["output_format"] == 'swf':
+            # do pass one first, then add audio at the end during pass 2?
+            # don't do mplex, do second pass instead.
+            log.info("Exporting .swf file")
+            ffmpeg_args = "-f flv "+config["workdir"]+"/video.swf"
+        elif config["output_format"] == 'mp4':
+            # do pass one first, then add audio at the end during pass 2?
+            # don't do mplex, do second pass instead.
+            log.info("Exporting .mp4 file")
+            ffmpeg_args = "-f mp4 -vcodec mpeg4 "+config["workdir"]+"/video.mp4"
+        elif config["output_format"] == 'mp4_ipod':  # NOT TESTED YET
+            # see http://www.ubuntuforums.org/showthread.php?t=114946
+            # do pass one first, then add audio at the end during pass 2?
+            # don't do mplex, do second pass instead.
+            log.info("Exporting ipod .mp4 file")
+            #ffmpeg_args = "-target $ffmpeg_target -f mp4 -vcodec mpeg4 -maxrate 1000 -b 700 -qmin 3 -qmax 5 -bufsize 4096 -g 300 "$workdir/video.mov"
+        elif config["output_format"] == 'mpg':
+            # do pass one first, then add audio at the end during pass 2?
+            # don't do mplex, do second pass instead.
+            log.info("Exporting .mpg file")
+            ffmpeg_args = "-f mpeg2video "+config["workdir"]+"/video.mpg"
+        else:  # default mpeg2 video for dvd/vcd
+            ffmpeg_args = "-target "+config["ffmpeg_target"]+" -bf 2 -f mpeg2video "+config["workdir"]+"/video.mpg"
+    
+        encoder_cmd = "ffmpeg -f yuv4mpegpipe -i - -r "+str(config["framerate"])+" -b "+config["video_bitrate"]+" -an -aspect "+config["aspect_ratio"]+" -s "+str(config["dvd_width"])+"x"+str(config["dvd_height"])+" -y %s" % (ffmpeg_args,)
+    
+    else:
+        encoder_cmd = "mpeg2enc "+config["mpeg2enc_params"]+" -o "+config["workdir"]+"/video.mpg -" # < "$workdir"/$yuvfifo >> "$outdir/$logfile" 2>&1 & 
+    
+    log.info(encoder_cmd)
+    encoder = subprocess.Popen(encoder_cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        
+    total_frames   = 0
+    audio_duration = 0
+    audio_pipeline = []
+    prev_imgs0     = []
+
+    count=0
+
+    element = None
+    while True:
+        # advance to next element
+        if not(element):
+            element = first_element
+        else:
+            element = element.next
+        if not(element):
+            break
+
+        element.start_frame = total_frames
+    
+        if(element.isa("Background") and element.duration == 0): 
+            continue # drop 0 duration background slides
+    
+        if element.isa("Audio"):
+            audio_duration += element.duration
+            audio_pipeline.append(element)
+            continue
+    
+        if not(isSlide(element)): # if not a slide, go on
+            continue
+    
+        count += 1
+        progress.overall_update(count, element.name)
+        #sys.stderr.write("%d/%d: Line %d: %s\n" % (count, video_element_count, element.location.linenum, element.location.line))
+    
+        # calculate the number of frames this element will consume
+        frames = num_frames(config, element.duration)
+    
+        # check if we need to generate frames to overlap with the
+        # last/next element as part as part of a transition
+        prev_transition = find_prev_transition(element)
+        next_transition = find_next_transition(element)
+        if prev_transition:
+            prev_frames = num_frames(config, element.prev.duration)
+        else:
+            prev_frames = 0
+        
+        if next_transition:
+            next_frames = num_frames(config, element.next.duration)
+        else:
+            next_frames = 0
+    
+        # generate the frames
+        try:
+            imgs = element.get_images(prev_frames + frames + next_frames, config, progress)
+        except Exception, e:
+            raise
+            raise Exception("%s: %s" % (element.location, str(e)))
+    
+        # now split up the frames based on the transition
+        prev_imgs1, cur_imgs, next_imgs = split_imgs(imgs, prev_frames, frames, next_frames)
+    
+        # process previous transition
+        if prev_frames:
+            comp_imgs = prev_transition.compose(prev_imgs0, prev_imgs1, config, progress)
+            for img in comp_imgs:
+                encode(encoder, img[0], img[1], config)
+                total_frames += img[1]
+    
+        # process current frames (i.e. frames not in transition)
+        for img in cur_imgs:
+            encode(encoder, img[0], img[1], config)
+            total_frames += img[1]
+    
+        # save off the frames of the next transition for the next time around
+        prev_imgs0 = next_imgs
+
+    encoder.stdin.close()
+    encoder.wait()
+    
+    video_duration = total_frames * 1000 / config["framerate"]
+    
+    log.info("Audio duration = %s" % (audio_duration,))
+    log.info("Video duration = %s" % (video_duration,))
+    
+    ############################################################################
+    # AUDIO section...
+    ##########################################################################
+    if(audio_duration < video_duration):
+        silence = Element.Silence("Auto-Inserted", video_duration-audio_duration)
+        silence.initialize(None, None, config)
+        audio_pipeline.append(silence)
+        log.info("Created Silence " + str(silence.duration))
+        audio_duration += silence.duration
+    
+    audio_raw = config["workdir"]+"/audio.raw"
+    audio_wav = config["workdir"]+"/audio.wav"
+    audio_dur = 0
+    reached_end = False
+    cmd("rm -f " + audio_raw)
+    for element in audio_pipeline:
+        if(audio_dur + element.duration > video_duration):
+            log.info("Trimming audio")
+            element.trim(video_duration - audio_dur, config)
+            reached_end = True
+    
+        element.apply_fx(config)
+        audio_dur += element.duration
+        cmd("cat %s >> %s" % (element.filename, audio_raw))
+    
+        if(reached_end):
+            break
+    audio_duration = audio_dur
+    log.info("Audio duration = %s" % (audio_duration,))
+    log.info("Video duration = %s" % (video_duration,))
+    
+    # now raw audio file should match in length
+        
+    cmd("sox -2 -e signed -c 2 -r %s %s %s" % (config["audio_sample_rate"], audio_raw, audio_wav))
+    
+    if config["ac3"] and config["output_format"] == 'mpeg2':
+        log.info("Creating ac3 audio...")
+        cmd("rm -f "+config["workdir"]+"/audio.ac3")
+        cmd("ffmpeg -i "+audio_wav+" -vn -ab "+str(config["audio_bitrate"])+"k -acodec ac3 -vol 100 -ar "+str(config["audio_sample_rate"])+" -ac 6 "+config["workdir"]+"/audio.ac3 >> "+config["ffmpeg_out"]+" 2>&1")
+    else:
+        raise Exception("Not yet supported")
+    
+    ## check to make sure the output files exist before running mplex:
+    if not(os.path.exists(config["workdir"]+"/video.mpg")):
+        raise Exception("ERROR: no output video.mpg file found! This usually happens when ffmpeg screws up something or one image is messed up and the resulting video can't be created")
+    	
+    log.info("Multiplexing audio and video...")
+    
+    ## now multiplex the audio and video:
+    ## -M option is important:  it generates a "single" output file instead of "single-segement" ones
+    ## if you don't use -M, the dvdauthor command will fail!
+    ## total mplex bitrate = 128kBit audio + 1500 kBit video + a little overhead
+    
+    #else  # default mpeg2 video for dvd/vcd
+    if config["ac3"]:
+        cmd("mplex -V "+config["video_buffer"]+" "+config["ignore_seq_end"]+" -f "+str(config["mplex_type"])+" -o "+config["outdir"]+"/"+config["slideshow_name"]+".vob "+config["workdir"]+"/video.mpg "+config["workdir"]+"/audio.ac3 >> "+config["ffmpeg_out"]+" 2>&1")
+    
+    progress.overall_done()

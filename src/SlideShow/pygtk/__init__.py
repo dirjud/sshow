@@ -1,10 +1,66 @@
-import os, logging
+import os, logging, threading, time
 import SlideShow, Settings
 import pygtk
 pygtk.require("2.0")
 import gtk, gobject
 
 log = logging.getLogger(__name__)
+
+class Build(threading.Thread):
+    def __init__(self, first_element, config, progress):
+        threading.Thread.__init__(self)
+        self.first_element    = first_element
+        self.config           = config
+        self.progress         = progress
+
+    def run(self):
+        try:
+            SlideShow.build(self.first_element, self.config, self.progress)
+        except Exception, e:
+            print e
+
+class Progress(object):
+    def __init__(self, overall_progress, overall_label, task_progress, task_label):
+        self.overall_progress = overall_progress
+        self.overall_label    = overall_label
+        self.task_progress    = task_progress
+        self.task_label       = task_label
+
+    def overall_start(self, N):
+        print "progress overall_start"
+#        self.overall_time = time.time()
+#        self.overall_N = N
+#        self.overall_label.set_text("Beginning %d tasks" % N)
+#        self.overall_progress.set_fraction(0.0)
+
+    def overall_update(self, i, desc):
+        print "progress overall_update", i, desc
+#        self.overall_progress.set_fraction(i/float(self.overall_N))
+#        self.overall_progress.set_text("%d/%d (%g%%) %g seconds" % (i, self.overall_N, 100.*i/self.overall_N, time.time()-self.overall_time))
+#        self.overall_label.set_text(desc)
+
+    def overall_done(self):
+        print "progress overall_done"
+#        self.overall_progress.set_text("Elapsed Time %g seconds" % (time.time()-self.overall_time,))
+
+    def task_start(self, N, desc):
+        print "progress task_start", N, desc
+#        self.task_time = time.time()
+#        self.task_N = N
+#        self.task_label.set_text(desc)
+#        self.task_progress.set_fraction(0)
+#        self.task_progress.set_text("")
+
+    def task_update(self, i):
+        print "progress task_update", i
+#        self.task_progress.set_fraction(i/float(self.task_N))
+#        self.task_progress.set_text("%d/%d (%g%%) %g seconds" % (i, self.task_N, 100.*i/self.task_N, time.time()-self.task_time))
+
+    def task_done(self):
+        print "progress task_done"
+#        self.task_progress.set_fraction(1.0)
+#        self.task_progress.set_text("Elapsed Time: %g seconds" % (time.time()-self.task_time()))
+        
 
 class SlideShowApp(object):       
     def __init__(self, config=None):
@@ -18,7 +74,7 @@ class SlideShowApp(object):
         builder.add_from_file(path + "/slideshow.glade")
         
         sigs = {}
-        for sig in ["on_exit", "on_new", "on_save", "on_open", "on_save_as", "on_cursor_changed", "on_uncomment", "on_comment_out", "on_element_delete", "on_new_image","on_new_transition", "on_new_background", "on_new_title", "on_new_music", "on_new_comment", "on_new_empty_line", "on_new_config", ]:
+        for sig in ["on_exit", "on_new", "on_save", "on_open", "on_save_as", "on_cursor_changed", "on_uncomment", "on_comment_out", "on_element_delete", "on_new_image","on_new_transition", "on_new_background", "on_new_title", "on_new_music", "on_new_comment", "on_new_empty_line", "on_new_config", "on_build", ]:
             sigs[sig] = eval("self."+sig)
 
         builder.connect_signals(sigs)
@@ -53,8 +109,22 @@ class SlideShowApp(object):
         self.pipeview_popup = builder.get_object("pipeview_popup")
         self.window.show()
 
+    def on_build(self, *args):
+        #dlg = self.builder.get_object("dialog_build")
+        #dlg.show()
+        progress = Progress(self.builder.get_object("progress_overall"),
+                            self.builder.get_object("label_overall"),
+                            self.builder.get_object("progress_task"),
+                            self.builder.get_object("label_task"))
+        build = Build(self.pipelist[0][1], self.config, progress)
+        print "starting build thread"
+        build.start()
+        build.join()
+        #dlg.hide()
+
     def insert_element(self, element):
         if element:
+            self.element.insert_after(element)
             iter = self.pipelist.insert_after(self.pipelist.get_iter(self.selected_path), [element, element])
             self.pipeview.set_cursor(self.pipelist.get_path(iter))
 
@@ -65,11 +135,14 @@ class SlideShowApp(object):
         self.insert_element(Settings.TransitionSettings.create(self.window))
 
     def on_new_background(self, evt):
-        pass
+        self.insert_element(Settings.BackgroundSettings.create(self.window))
+
     def on_new_title(self, evt):
-        pass
+        self.insert_element(Settings.TitleSettings.create(self.window))
+
     def on_new_music(self, evt):
         pass
+
     def on_new_comment(self, evt):
         self.insert_element(SlideShow.Element.Comment("generated","#"))
 
@@ -84,6 +157,7 @@ class SlideShowApp(object):
         for path in pathlist:
             element = self.pipelist[path][1]
             new_element = SlideShow.Element.Comment(element.location, "#"+str(element))
+            element.replace(new_element)
             self.pipelist[path] = [ new_element, new_element ]
         self.on_cursor_changed(self.pipeview)
 
@@ -95,6 +169,7 @@ class SlideShowApp(object):
                 text = str(element)[1:]
                 try:
                     new_element = SlideShow.Reader.DVDSlideshow.parse_line(text, self.config, element.location)
+                    element.replace(new_element)
                     self.pipelist[path] = [ new_element, new_element ]
                 except:
                     pass
@@ -105,6 +180,8 @@ class SlideShowApp(object):
         model, pathlist = self.pipeview.get_selection().get_selected_rows()
         pathlist.reverse()
         for path in pathlist:
+            element = self.pipelist[path][1]
+            element.remove()
             self.pipelist.remove(self.pipelist.get_iter(path))
         self.select_none()
 
@@ -136,13 +213,14 @@ class SlideShowApp(object):
             if self.settings:
                 self.settings.remove()
 
-            
-            klass = "Settings." + str(self.element.__class__).split(".")[-1] + "Settings"
+            klass = None
             try:
-                self.settings = eval(klass)(self.workbox, self.config, self.element_updated)
+                klass = eval("Settings." + str(self.element.__class__).split(".")[-1] + "Settings")
             except AttributeError:
                 self.settings = None
 
+            if klass:
+                self.settings = klass(self.workbox, self.config, self.element_updated)
 
         if(self.settings):
             self.settings.update(self.element)
@@ -235,8 +313,11 @@ class SlideShowApp(object):
         self.dirty = True
 
     def row_edited_cb(self, cell, path, text, user_data=None):
-        element = SlideShow.Reader.DVDSlideshow.parse_line(text, self.config, str(path))
-        self.pipelist[path] = [ element, element ]
+        prevelement = self.pipelist[path][1]
+        newelement = SlideShow.Reader.DVDSlideshow.parse_line(text, self.config, prevelement.location)
+        prevelement.replace(newelement)
+
+        self.pipelist[path] = [ newelement, newelement ]
         self.on_cursor_changed(self.pipeview)
         self.dirty = True
 

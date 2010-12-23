@@ -23,10 +23,62 @@ class Settings(object):
         pass
 
 ###############################################################################
+class BackgroundSettings(Settings):
+    @staticmethod
+    def create(parent):
+        return SlideShow.Element.Background("generated", "background", 0, "", "#000000")
+
+    def __init__(self, box, config, element_updated):
+        Settings.__init__(self, box, config, element_updated)
+
+        builder = gtk.Builder()
+        path = "/".join(__file__.split("/")[:-1])
+        builder.add_from_file(path+"/backgroundsettings.glade")
+
+        sigs = {}
+        for sig in ["on_duration", "on_colorsel_ok", "on_colorsel_cancel"]:
+            sigs[sig] = eval("self."+sig)
+
+        builder.connect_signals(sigs)
+        
+        self.top      = builder.get_object("topbox")
+        self.duration = builder.get_object("entry_duration")
+        self.colorsel = builder.get_object("colorsel")
+        
+        self.box.pack_start(self.top, expand=True, fill=True, padding=2)
+
+        self.element    = None
+
+    def sync_from_element_to_gui(self):
+        self.duration.set_text(str(self.element.duration/1000.))
+        if self.element.bg:
+            color = gtk.gdk.Color(self.element.bg)
+            self.colorsel.set_previous_color(color)
+            self.colorsel.set_current_color(color)
+
+    def on_duration(self, *args):
+        try:
+            dur = float(self.duration.get_text())
+            self.element.duration = int(dur * 1000)
+            self.element_updated()
+        except:
+            self.duration.set_text(str(self.element.duration/1000.))
+
+    def on_colorsel_ok(self, *args):
+        color = self.colorsel.get_current_color()
+        self.colorsel.set_previous_color(color)
+        bg = "#%02x%02x%02x" % (color.red/256, color.green/256, color.blue/256)
+        self.element.bg = bg
+        self.element_updated()
+
+    def on_colorsel_cancel(self, *args):
+        self.colorsel.set_current_color(gtk.gdk.Color(self.element.bg))
+
+###############################################################################
 class TitleSettings(Settings):
     @staticmethod
     def create(parent):
-        return SlideShow.Element.Transition("generated", "title", 5000, "Put Text Here", "")
+        return SlideShow.Element.Title("generated", "title", 5000, "Put Text Here", "")
 
     def __init__(self, box, config, element_updated):
         Settings.__init__(self, box, config, element_updated)

@@ -4,22 +4,6 @@ import KenBurns
 
 log = logging.getLogger(__name__)
 
-class Progress():
-    def initialize(self, caption):
-        self.caption = caption
-        self.time0   = time.time()
-    
-    def update(self, i, N):
-        n = 40
-        p = 100 * i / N
-        f = n * p / 100
-        sys.stderr.write("  "+self.caption+": |" + "=" * f + ' ' * (n-f)+"| %3d%% (%d/%d)    \r" % (p,i,N))
-    def done(self):
-        sys.stderr.write("  "+self.caption+": Elapsed Time=%s seconds" % (time.time()-self.time0,))
-        sys.stderr.write(" " * 30)
-        sys.stderr.write("\n")
-
-
 def cmd(x):
     log.debug("cmd: " + x)
     p = subprocess.Popen(x, shell=True, stdout=subprocess.PIPE)
@@ -120,6 +104,27 @@ class Element():
     def __str__(self):
         return self.name
 
+    def replace(self, element):
+        element.next = self.next
+        element.prev = self.prev
+        if(self.prev):
+            self.prev.next = element
+        if(self.next):
+            self.next.prev = element
+
+    def insert_after(self, element):
+        element.next = self.next
+        element.prev = self
+        if self.next:
+            self.next.prev = element
+        self.next = element
+
+    def remove(self):
+        if self.prev:
+            self.prev.next = self.next
+        if self.next:
+            self.next.prev = self.prev
+
 def encode(x):
     return x.replace(":","\:")
 
@@ -179,13 +184,16 @@ class Image(Element):
         self.filename = filename
         self.extension = filename.split(".")[-1]
 
-    def get_images(self, N, config):
+    def get_images(self, N, config, progress):
         fx = [e.name for e in self.effects]
         if("kenburns" in fx):
             param = self.effects[fx.index("kenburns")].param
-            return KenBurns.kenburns(config, param, self.filename, N,Progress())
+            return KenBurns.kenburns(config, param, self.filename, N, progress)
         else:
+            progress.task_start(N, self.name)
             self.create_slide(config)
+            progress.task_update(N)
+            progress.task_done()
             return [ (self.filename, N), ]
 
     def create_slide(self, config):
@@ -222,12 +230,11 @@ class Background(Image):
              raise Exception("Unknown background specified. Must be a file or color")
 
     def __str__(self):
-        x = "%s:%s:%s:%s" % (self.name, self.duration/1000, self.subtitle, self.bg)
+        x = "%s:%g:%s:%s" % (self.name, self.duration/1000., self.subtitle, self.bg)
         return x
 
     def create_slide(self, config):
         self.extension="ppm"
-
         if self.bg == "":
             prev_bg = self.prev._find_background()
             self.filename = prev_bg.filename
@@ -253,7 +260,7 @@ class Title(Image):
             raise Exception("No title text found.")
 
     def __str__(self):
-        return "%s:%s:%s:%s" % (self.name, self.duration/1000, self.title1, self.title2)
+        return "%s:%g:%s:%s" % (self.name, self.duration/1000., self.title1, self.title2)
 
     def create_slide(self, config):
         self.extension = "ppm"
@@ -270,7 +277,7 @@ class Title(Image):
             fcolor='white'
 
         convert = ("convert -size %dx%d xc:transparent -fill '%s' -pointsize %s -gravity Center -font %s -annotate 0 '%s' -type TrueColorMatte -depth 9 miff:- | composite -compose src-over -type TrueColorMatte -depth 8 - %s" % (config["dvd_width"], config["dvd_height"], fcolor, fsize, config["title_font"], self.title1, bg.filename)).replace("%", "%%") + " %s"
-        self.filename = cmdif(None, config["workdir"], self.extension, convert)
+        self.filename = cmdif(bg.filename, config["workdir"], self.extension, convert)
 
 ################################################################################
 class Transition(Element):
@@ -288,7 +295,7 @@ class Transition(Element):
     def __str__(self):
         return "%s:%g" % (self.name, self.duration/1000.)
 
-    def compose(self, imgs0, imgs1, config):
+    def compose(self, imgs0, imgs1, config, progress):
         N = int(config["framerate"] * self.duration / 1000.)
 
         if len(imgs0) == 0:
@@ -311,12 +318,11 @@ class Transition(Element):
             raise Exception("Internal Error Generating Transition. Number of overlapping frames in transition is not equal to %d." % N)
 
         imgs = []
-        progress = Progress()
-        progress.initialize(self.name)
+        progress.task_start(N, self.name)
         for i, (img0, img1) in enumerate(zip(unwrap0, unwrap1)):
-            progress.update(i,N)
+            progress.task_update(i)
             imgs.append((eval("self."+self.name+"(img0, img1, i, N, config)"), 1))
-        progress.done()
+        progress.task_done()
         return imgs
     
     def crossfade(self, img0, img1, i, N, config):

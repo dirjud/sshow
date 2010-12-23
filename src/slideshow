@@ -7,6 +7,17 @@ import gtk
 
 config = SlideShow.Config()
 config.parse_argv()
+SlideShow.check_system(config)
 
-app = SlideShow.pygtk.SlideShowApp(config)
-gtk.main()
+if config["gui"]:
+    app = SlideShow.pygtk.SlideShowApp(config)
+    gtk.main()
+else:
+    if not(config["input_txtfile"]):
+        raise Exception("No input file specified")
+
+    pipeline = SlideShow.read_pipeline(config["input_txtfile"], config)
+    progress = SlideShow.Progress()
+    SlideShow.initialize_pipeline(pipeline, config)
+    SlideShow.build(pipeline[0], config, progress)
+    
