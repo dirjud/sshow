@@ -124,6 +124,32 @@ def encode(x):
     return x.replace(":","\:")
 
 ################################################################################
+class Comment(Element):
+    def __init__(self, location, comment):
+        Element.__init__(self, location)
+        self.comment = comment
+        self.name = "comment"
+    def __str__(self):
+        return self.comment
+
+################################################################################
+class EmptyLine(Element):
+    def __init__(self, location):
+        Element.__init__(self, location)
+        self.name="emptyline"
+    def __str__(self):
+        return ""
+
+################################################################################
+class Config(Element):
+    def __init__(self, location, name, val):
+        Element.__init__(self, location)
+        self.name = name
+        self.val  = val
+    def __str__(self):
+        return "%s=%s" % (self.name, self.val)
+
+################################################################################
 class Image(Element):
     extensions = ['jpg', 'png', 'jpeg' ]
     def __init__(self, location, filename, extension, duration, subtitle, effects):

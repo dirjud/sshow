@@ -291,6 +291,7 @@ def isNextTransition(pos, pipeline):
     return False
 
 def initialize_pipeline(pipeline, config):
+
     config["default_font"] = "Helvetica-Bold" # start with ImageMagick font and then see if other fonts are available.
     for font_name in config["default_fonts"]:
         try:

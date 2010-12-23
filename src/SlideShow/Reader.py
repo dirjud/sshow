@@ -32,35 +32,37 @@ class DVDSlideshow():
         for line in f:
             linenum += 1 
             location = FileLocation(filename, linenum, line)
-        
-            line = line.strip()
-        
-            if not(line):     # check if this is an empty line
-                continue
-            
-            if line[0] == "#":  # remove comments
-                continue;
-        
-            elif line == 'exit':
-                break
-        
-            elif line.startswith("include"):
-                DVDSlideshow.parse_input_file(DVDSlideshow.parse_key_value(line)[1], pipeline, config)
 
-            else:
-                try:
-                    if DVDSlideshow.check_theme(line, config):
-                        continue
-        
-                    elif DVDSlideshow.check_var(line, config):
-                        continue
-                    else:
-                        pipeline.append(DVDSlideshow.get_element(line, location))
-                except Exception, e:
-                    raise
-                    raise Exception("%s: %s" % (location, str(e)))
-        
+            if line.startswith("include"):
+                DVDSlideshow.parse_input_file(DVDSlideshow.parse_key_value(line)[1], pipeline, config)
+                continue
+
+            try:
+                pipeline.append(DVDSlideshow.parse_line(line, config, location))
+            except Exception, e:
+                raise
+                #raise Exception("%s: %s" % (location, str(e)))
         f.close()
+
+    @staticmethod
+    def parse_line(rawline, config, location):
+        line = rawline.strip()
+        
+        if not(line):     # check if this is an empty line
+            return Element.EmptyLine(location)
+        
+        if line[0] == "#":  # remove comments
+            return Element.Comment(location, line)
+
+        #if DVDSlideshow.check_theme(line, config):
+        #    continue
+        
+        conf = DVDSlideshow.check_var(line, config, location)
+        if conf:
+            return conf
+
+        return DVDSlideshow.get_element(line, location)
+
 
     @staticmethod
     def parse_key_value(line):
@@ -85,14 +87,12 @@ class DVDSlideshow():
             return False
 
     @staticmethod
-    def check_var(line, config):
+    def check_var(line, config, location):
         for var in config.vars:
             if(line.startswith(var)):
                 key,val = DVDSlideshow.parse_key_value(line)
                 config.set_var(key, val)
-                config["input_txtfile_options"][key]=val
-                return True
-        return False
+                return Element.Config(location,key, val)
 
     @staticmethod
     def get_element(line, location):

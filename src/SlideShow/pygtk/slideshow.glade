@@ -217,7 +217,10 @@
                   <object class="GtkTreeView" id="treeview_pipeline">
                     <property name="visible">True</property>
                     <property name="can_focus">True</property>
+                    <property name="headers_visible">False</property>
                     <property name="reorderable">True</property>
+                    <property name="search_column">0</property>
+                    <property name="show_expanders">False</property>
                     <property name="enable_grid_lines">both</property>
                     <signal name="cursor_changed" handler="on_cursor_changed"/>
                   </object>
@@ -232,15 +235,6 @@
               <object class="GtkVBox" id="workbox">
                 <property name="visible">True</property>
                 <property name="orientation">vertical</property>
-                <child>
-                  <object class="GtkDrawingArea" id="imagearea">
-                    <property name="visible">True</property>
-                    <signal name="motion_notify_event" handler="on_mouse"/>
-                  </object>
-                  <packing>
-                    <property name="position">0</property>
-                  </packing>
-                </child>
                 <child>
                   <placeholder/>
                 </child>
@@ -268,4 +262,187 @@
       </object>
     </child>
   </object>
+  <object class="GtkMenu" id="pipeview_popup">
+    <property name="visible">True</property>
+    <child>
+      <object class="GtkMenuItem" id="uncomment">
+        <property name="visible">True</property>
+        <property name="tooltip_text" translatable="yes">Uncomments any selected items that evaluate to valid elements.</property>
+        <property name="label" translatable="yes">Uncomment</property>
+        <property name="use_underline">True</property>
+        <signal name="activate" handler="on_uncomment"/>
+      </object>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="comment_out">
+        <property name="visible">True</property>
+        <property name="tooltip_text" translatable="yes">Comments out all selected elements to temporarily remove them from the slideshow.</property>
+        <property name="label" translatable="yes">Comment Out</property>
+        <property name="use_underline">True</property>
+        <signal name="activate" handler="on_comment_out"/>
+      </object>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="delete">
+        <property name="visible">True</property>
+        <property name="tooltip_text" translatable="yes">Deletes selected elements.</property>
+        <property name="label" translatable="yes">Delete</property>
+        <property name="use_underline">True</property>
+        <signal name="activate" handler="on_element_delete"/>
+      </object>
+    </child>
+    <child>
+      <object class="GtkSeparatorMenuItem" id="separator1">
+        <property name="visible">True</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="insert">
+        <property name="visible">True</property>
+        <property name="tooltip_text" translatable="yes">Add a new item to the pipeline after this element.</property>
+        <property name="label" translatable="yes">Add New...</property>
+        <property name="use_underline">True</property>
+        <child type="submenu">
+          <object class="GtkMenu" id="menu4">
+            <property name="visible">True</property>
+            <child>
+              <object class="GtkMenuItem" id="new_image">
+                <property name="visible">True</property>
+                <property name="label" translatable="yes">Image</property>
+                <property name="use_underline">True</property>
+                <signal name="activate" handler="on_new_image"/>
+              </object>
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="new_transition">
+                <property name="visible">True</property>
+                <property name="label" translatable="yes">Transition</property>
+                <property name="use_underline">True</property>
+                <signal name="activate" handler="on_new_transition"/>
+              </object>
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="new_background">
+                <property name="visible">True</property>
+                <property name="label" translatable="yes">Background</property>
+                <property name="use_underline">True</property>
+                <signal name="activate" handler="on_new_background"/>
+              </object>
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="new_title">
+                <property name="visible">True</property>
+                <property name="label" translatable="yes">Title</property>
+                <property name="use_underline">True</property>
+                <signal name="activate" handler="on_new_title"/>
+              </object>
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="new_Music">
+                <property name="visible">True</property>
+                <property name="label" translatable="yes">Music</property>
+                <property name="use_underline">True</property>
+                <signal name="activate" handler="on_new_music"/>
+              </object>
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="new_config">
+                <property name="visible">True</property>
+                <property name="label" translatable="yes">Configuration</property>
+                <property name="use_underline">True</property>
+                <signal name="activate" handler="on_new_config"/>
+              </object>
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="new_comment">
+                <property name="visible">True</property>
+                <property name="label" translatable="yes">Comment</property>
+                <property name="use_underline">True</property>
+                <signal name="activate" handler="on_new_comment"/>
+              </object>
+            </child>
+            <child>
+              <object class="GtkMenuItem" id="new_empty_line">
+                <property name="visible">True</property>
+                <property name="label" translatable="yes">Empty Line</property>
+                <property name="use_underline">True</property>
+                <signal name="activate" handler="on_new_empty_line"/>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </object>
+  <object class="GtkDialog" id="new_image_dlg">
+    <property name="border_width">5</property>
+    <property name="title" translatable="yes">New Image</property>
+    <property name="type_hint">normal</property>
+    <property name="has_separator">False</property>
+    <child internal-child="vbox">
+      <object class="GtkVBox" id="dialog-vbox1">
+        <property name="visible">True</property>
+        <property name="orientation">vertical</property>
+        <property name="spacing">2</property>
+        <child>
+          <object class="GtkVBox" id="new_image_workbox">
+            <property name="width_request">600</property>
+            <property name="height_request">400</property>
+            <property name="visible">True</property>
+            <property name="orientation">vertical</property>
+            <child>
+              <placeholder/>
+            </child>
+          </object>
+          <packing>
+            <property name="position">1</property>
+          </packing>
+        </child>
+        <child internal-child="action_area">
+          <object class="GtkHButtonBox" id="dialog-action_area1">
+            <property name="visible">True</property>
+            <property name="layout_style">end</property>
+            <child>
+              <object class="GtkButton" id="button_newimage_cancel">
+                <property name="label">gtk-cancel</property>
+                <property name="visible">True</property>
+                <property name="can_focus">True</property>
+                <property name="receives_default">True</property>
+                <property name="use_stock">True</property>
+              </object>
+              <packing>
+                <property name="expand">False</property>
+                <property name="fill">False</property>
+                <property name="position">0</property>
+              </packing>
+            </child>
+            <child>
+              <object class="GtkButton" id="button_newimage_ok">
+                <property name="label">gtk-ok</property>
+                <property name="visible">True</property>
+                <property name="can_focus">True</property>
+                <property name="receives_default">True</property>
+                <property name="use_stock">True</property>
+              </object>
+              <packing>
+                <property name="expand">False</property>
+                <property name="fill">False</property>
+                <property name="position">1</property>
+              </packing>
+            </child>
+          </object>
+          <packing>
+            <property name="expand">False</property>
+            <property name="pack_type">end</property>
+            <property name="position">0</property>
+          </packing>
+        </child>
+      </object>
+    </child>
+    <action-widgets>
+      <action-widget response="0">button_newimage_cancel</action-widget>
+      <action-widget response="0">button_newimage_ok</action-widget>
+    </action-widgets>
+  </object>
+  <object class="GtkAction" id="action1"/>
 </interface>

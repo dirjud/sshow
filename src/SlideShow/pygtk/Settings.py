@@ -7,13 +7,23 @@ import gtk, gobject
 log = logging.getLogger(__name__)
 
 class ImageSettings(object):
-    def __init__(self, box, imagearea, config, parent):
+    def dev_null(self, *args, **kw):
+        pass
+
+    def __init__(self, box, config, element_updated=None):
         self.box = box
-        self.imagearea = imagearea
         self.curimg = None
         self.config = config
-        self.parent = parent
-        table = self.top = gtk.Table(rows=3,columns=3, homogeneous=False)
+        if not(element_updated):
+            self.element_updated = self.dev_null
+        else:
+            self.element_updated = element_updated
+            
+
+        self.top = gtk.VBox()
+
+
+        table = gtk.Table(rows=3,columns=3, homogeneous=False)
 
         for i,name in enumerate(["Filename", "Duration", "Subtitle"]):
             label = gtk.Label(name+":")
@@ -75,24 +85,45 @@ class ImageSettings(object):
         table.attach(self.fxview, 2,3,0,3)
         self.fxview.show()
 
-        box.pack_start(self.top, expand=False, fill=True, padding=0)
+
+        self.imagearea = gtk.DrawingArea()
+        self.top.pack_start(self.imagearea, expand=True, fill=True, padding=0)
+        self.imagearea.show()
+        self.imagearea.set_events(gtk.gdk.ALL_EVENTS_MASK)
+        self.imagearea.connect("expose-event", self.imagearea_expose)
+        self.imagearea.connect("button-press-event", self.on_button_press)
+        self.imagearea.connect("button-release-event", self.on_button_release)
+        self.imagearea.connect("motion-notify-event", self.on_mouse)
+
+
+        self.top.pack_start(table, expand=False, fill=False, padding=0)
+        table.show()
         self.top.show()
+
+        self.box.pack_start(self.top)
+        self.box.show()
 
         self.kb1move = self.kb1scale = self.kb2scale = self.kb2move = []
         self.dragging = False
         self.drag_state = None
-    
+        self.element = None
+
+    def imagearea_expose(self, area, event):
+        self.on_paint()
+        return True
+
+
     def on_duration(self, *args):
         try:
             dur = float(self.duration.get_text())
             self.element.duration = int(dur * 1000)
-            self.parent.element_updated()
+            self.element_updated()
         except:
             self.duration.set_text(str(self.element.duration/1000.))
 
     def on_subtitle(self, *args):
         self.element.subtitle = self.subtitle.get_text()
-        self.parent.element_updated()
+        self.element_updated()
 
     def on_filename(self, *args):
         filename = self.filename.get_text()
@@ -100,11 +131,11 @@ class ImageSettings(object):
             if os.path.exists(filename):
                 self.element.update_filename(filename)
                 self.on_paint()
-                self.parent.element_updated()
+                self.element_updated()
             else:
                 self.filename.set_text(self.element.filename_orig)
 
-    def on_filename_button(self, *args):
+    def get_filename(self):
         dlg = gtk.FileChooserDialog(
             title="Open", parent=self.imagearea.get_toplevel(),
             action=gtk.FILE_CHOOSER_ACTION_OPEN, 
@@ -116,9 +147,11 @@ class ImageSettings(object):
         filename=None
         if(response == gtk.RESPONSE_ACCEPT):
             filename = dlg.get_filename()
-            log.debug("Opening "+filename)
         dlg.destroy()
+        return filename
 
+    def on_filename_button(self, *args):
+        filename = self.get_filename()
         if filename:
             self.filename.set_text(filename)
             self.element.update_filename(filename)
@@ -127,15 +160,24 @@ class ImageSettings(object):
     def remove(self):
         self.box.remove(self.top)
 
-    def update(self, element):
-        self.element=element
+    def sync_element_to_gui(self):
         self.filename.set_text(self.element.filename_orig)
         self.duration.set_text(str(self.element.duration/1000.))
         self.subtitle.set_text(self.element.subtitle)
         self.fxstore.clear()
         for fx in self.element.effects:
             self.fxstore.append([fx.name, fx.param])
+        
+    def update(self, element):
+        self.element=element
+        self.sync_element_to_gui()
 
+    def create(self):
+        filename = self.get_filename()
+        extension = filename.split(".")[-1]
+        self.element = SlideShow.Element.Image("generated", filename, extension, 5000, "", [])
+        self.sync_element_to_gui()
+        return self.element
 
     def on_paint(self):
         d = self.imagearea.window
@@ -149,6 +191,9 @@ class ImageSettings(object):
                                   background=gtk.gdk.Color()),
                          True, 0, 0, wd, hd)
         
+        if(wd == 1 and hd == 1):
+            return
+
         # draw image
         if (self.element and hasattr(self.element, "filename")):
             if(self.curimg != self.element.filename):
@@ -172,7 +217,7 @@ class ImageSettings(object):
                 hp = hd*N/10
                 wp = hp * wo / ho
 
-            if dirty or wp != self.pixbuf.get_width() or hp != self.pixbuf.get_height():
+            if dirty or not(self.pixbuf) or wp != self.pixbuf.get_width() or hp != self.pixbuf.get_height():
                 self.pixbuf = orig.scale_simple(wp, hp, gtk.gdk.INTERP_BILINEAR)
 
             offx = (wd-wp)/2
@@ -335,7 +380,7 @@ class ImageSettings(object):
             params[3] = pos
         fx = self.element.effects[ikb]
         fx.param = ";".join(params)
-        self.parent.element_updated()
+        self.element_updated()
         self.fxstore[ikb,] = [fx.name, fx.param]
 
     def on_mouse(self, widget, evt):
@@ -359,7 +404,7 @@ class ImageSettings(object):
                     return True
 
         def check_move(x,y, move, which):
-            if inside(x,y,move):
+            if move and inside(x,y,move):
                 self.imagearea.window.set_cursor(gtk.gdk.Cursor(gtk.gdk.FLEUR))
                 self.drag_state = [which, "move"]
                 return True
@@ -384,12 +429,12 @@ class ImageSettings(object):
             self.imagearea.window.set_cursor(None)
 
 
-    def on_button_press(self, evt):
+    def on_button_press(self, widget, evt):
         if(evt.button==1):
             self.dragging = True
             self.drag_xy0 = (evt.x, evt.y)
 
-    def on_button_release(self, evt):
+    def on_button_release(self, widget, evt):
         if(evt.button==1):
             if self.drag_state and type(self.drag_state[-1]) is tuple:
                 self.kbupdate()
