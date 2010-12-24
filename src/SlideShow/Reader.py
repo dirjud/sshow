@@ -96,7 +96,17 @@ class DVDSlideshow():
 
     @staticmethod
     def get_element(line, location):
-        element, params = line.split(":", 1)
+        try:
+            # split at the first : to allow for different parsing depending
+            # on what type of element this is
+            element, params = line.split(":", 1) 
+        except ValueError: 
+            # if there is no colon, still see if we can get something out of
+            # default parameters
+            element = line
+            params  = ""
+
+        # now get the extension
         extension = element.split(".")[-1].lower()
 
         # this is a hack to escape background colors that start with #
@@ -167,7 +177,7 @@ class DVDSlideshow():
     
     @staticmethod
     def getImage(location, filename, extension, fields):
-        duration = DVDSlideshow.parse_duration(DVDSlideshow.pop(fields))
+        duration = DVDSlideshow.parse_duration(DVDSlideshow.pop(fields),allow_zero=True)
         subtitle = DVDSlideshow.pop(fields)
         effects = []
         while fields:

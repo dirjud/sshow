@@ -319,80 +319,67 @@
       </object>
     </child>
     <child>
-      <object class="GtkMenuItem" id="insert">
+      <object class="GtkMenuItem" id="new_image">
         <property name="visible">True</property>
-        <property name="tooltip_text" translatable="yes">Add a new item to the pipeline after this element.</property>
-        <property name="label" translatable="yes">Add New...</property>
+        <property name="label" translatable="yes">New Image</property>
         <property name="use_underline">True</property>
-        <child type="submenu">
-          <object class="GtkMenu" id="menu4">
-            <property name="visible">True</property>
-            <child>
-              <object class="GtkMenuItem" id="new_image">
-                <property name="visible">True</property>
-                <property name="label" translatable="yes">Image</property>
-                <property name="use_underline">True</property>
-                <signal name="activate" handler="on_new_image"/>
-              </object>
-            </child>
-            <child>
-              <object class="GtkMenuItem" id="new_transition">
-                <property name="visible">True</property>
-                <property name="label" translatable="yes">Transition</property>
-                <property name="use_underline">True</property>
-                <signal name="activate" handler="on_new_transition"/>
-              </object>
-            </child>
-            <child>
-              <object class="GtkMenuItem" id="new_background">
-                <property name="visible">True</property>
-                <property name="label" translatable="yes">Background</property>
-                <property name="use_underline">True</property>
-                <signal name="activate" handler="on_new_background"/>
-              </object>
-            </child>
-            <child>
-              <object class="GtkMenuItem" id="new_title">
-                <property name="visible">True</property>
-                <property name="label" translatable="yes">Title</property>
-                <property name="use_underline">True</property>
-                <signal name="activate" handler="on_new_title"/>
-              </object>
-            </child>
-            <child>
-              <object class="GtkMenuItem" id="new_Music">
-                <property name="visible">True</property>
-                <property name="label" translatable="yes">Music</property>
-                <property name="use_underline">True</property>
-                <signal name="activate" handler="on_new_music"/>
-              </object>
-            </child>
-            <child>
-              <object class="GtkMenuItem" id="new_config">
-                <property name="visible">True</property>
-                <property name="label" translatable="yes">Configuration</property>
-                <property name="use_underline">True</property>
-                <signal name="activate" handler="on_new_config"/>
-              </object>
-            </child>
-            <child>
-              <object class="GtkMenuItem" id="new_comment">
-                <property name="visible">True</property>
-                <property name="label" translatable="yes">Comment</property>
-                <property name="use_underline">True</property>
-                <signal name="activate" handler="on_new_comment"/>
-              </object>
-            </child>
-            <child>
-              <object class="GtkMenuItem" id="new_empty_line">
-                <property name="visible">True</property>
-                <property name="label" translatable="yes">Empty Line</property>
-                <property name="use_underline">True</property>
-                <signal name="activate" handler="on_new_empty_line"/>
-              </object>
-            </child>
-          </object>
-        </child>
+        <signal name="activate" handler="on_new_image"/>
+      </object>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="new_transition">
+        <property name="visible">True</property>
+        <property name="label" translatable="yes">New Transition</property>
+        <property name="use_underline">True</property>
+        <signal name="activate" handler="on_new_transition"/>
+      </object>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="new_background">
+        <property name="visible">True</property>
+        <property name="label" translatable="yes">New Background</property>
+        <property name="use_underline">True</property>
+        <signal name="activate" handler="on_new_background"/>
+      </object>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="new_title">
+        <property name="visible">True</property>
+        <property name="label" translatable="yes">New Title</property>
+        <property name="use_underline">True</property>
+        <signal name="activate" handler="on_new_title"/>
+      </object>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="new_Music">
+        <property name="visible">True</property>
+        <property name="label" translatable="yes">New Music</property>
+        <property name="use_underline">True</property>
+        <signal name="activate" handler="on_new_music"/>
+      </object>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="new_config">
+        <property name="visible">True</property>
+        <property name="label" translatable="yes">New Configuration</property>
+        <property name="use_underline">True</property>
+        <signal name="activate" handler="on_new_config"/>
+      </object>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="new_comment">
+        <property name="visible">True</property>
+        <property name="label" translatable="yes">New Comment</property>
+        <property name="use_underline">True</property>
+        <signal name="activate" handler="on_new_comment"/>
+      </object>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="new_empty_line">
+        <property name="visible">True</property>
+        <property name="label" translatable="yes">New Empty Line</property>
+        <property name="use_underline">True</property>
+        <signal name="activate" handler="on_new_empty_line"/>
       </object>
     </child>
   </object>

@@ -19,5 +19,5 @@ else:
     pipeline = SlideShow.read_pipeline(config["input_txtfile"], config)
     progress = SlideShow.Progress()
     SlideShow.initialize_pipeline(pipeline, config)
-    SlideShow.build(pipeline[0], config, progress)
+    SlideShow.build(pipeline, config, progress)
     

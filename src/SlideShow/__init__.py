@@ -714,12 +714,10 @@ def split_imgs(imgs, prev_frames, curr_frames, next_frames):
 
     return prev, curr, next
 
-def build(first_element, config, progress):
-    element=first_element
+def build(pipeline, config, progress):
     slide_count = 0
-    while element:
+    for element in pipeline:
         if isSlide(element): slide_count += 1
-        element = element.next
     progress.overall_start(slide_count)
 
     if config["mpeg_encoder"] == 'ffmpeg':
@@ -767,18 +765,7 @@ def build(first_element, config, progress):
 
     count=0
 
-    element = None
-    while True:
-        # advance to next element
-        if not(element):
-            element = first_element
-        else:
-            element = element.next
-        if not(element):
-            break
-
-        element.start_frame = total_frames
-    
+    for element in pipeline:
         if(element.isa("Background") and element.duration == 0): 
             continue # drop 0 duration background slides
     

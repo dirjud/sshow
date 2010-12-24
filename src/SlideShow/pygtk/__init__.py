@@ -124,8 +124,8 @@ class SlideShowApp(object):
 
     def insert_element(self, element):
         if element:
-            self.element.insert_after(element)
-            iter = self.pipelist.insert_after(self.pipelist.get_iter(self.selected_path), [element, element])
+            self.element.insert_before(element)
+            iter = self.pipelist.insert_before(self.pipelist.get_iter(self.selected_path), [element, element])
             self.pipeview.set_cursor(self.pipelist.get_path(iter))
 
     def on_new_image(self, evt):

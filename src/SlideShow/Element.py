@@ -84,11 +84,11 @@ class Effect():
 class Element():
     def __init__(self, location):
         self.location = location
-        self.frames_extended = 0
 
     def initialize(self, prev, next, config):
         self.next=next
         self.prev=prev
+        self.config = config
 
     def isa(self, type1):
         return issubclass(self.__class__, eval(type1))
@@ -99,7 +99,11 @@ class Element():
         elif(self.prev):
             return self.prev._find_background()
         else:
-            raise Exception("Cannot find background")
+            #raise Exception("Cannot find background")
+            # no background found, so return default black one
+            element = Background("generated", "background", 0, "", "#000000")
+            element.create_slide(self.config)
+            return element
 
     def __str__(self):
         return self.name
@@ -118,6 +122,13 @@ class Element():
         if self.next:
             self.next.prev = element
         self.next = element
+
+    def insert_before(self, element):
+        element.prev = self.prev
+        element.next = self
+        if self.prev:
+            self.prev.next = element
+        self.prev = element
 
     def remove(self):
         if self.prev:
