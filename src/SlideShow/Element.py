@@ -416,12 +416,15 @@ class Audio(Element):
 
     def transcode(self, config):
         if self.extension == "mp3":
-            log.info("decoding mp3 audio file %s... be patient..." % self.filename)
             self.extension = "wav"
             ffmpeg = "ffmpeg -i "+self.filename+" -y -vn -ab "+str(config["audio_bitrate"])+"k -f wav -ar "+str(config["audio_sample_rate"])+" -ac 2 %s >> "+config["ffmpeg_out"]+" 2>&1"
             self.filename = cmdif(self.filename, config["workdir"], self.extension, ffmpeg)
-
-#  			fi
+        elif self.extension == "ogg":
+            self.extension = "wav"
+            oggdec = "oggdec --quiet -o %s "+self.filename
+            self.filename = cmdif(self.filename, config["workdir"], self.extension, oggdec)
+        elif self.extension == "wav":
+            pass # no need to do anything
 #  		elif [ "$suffix" == "m4a" ] || [ "$suffix" == "aac" ] ; then
 #  #			myecho "[dvd-slideshow] decoding mp4 audio... be patient."
 #  			if [ "$audiosmp" -eq 1 ] ; then
@@ -429,16 +432,6 @@ class Audio(Element):
 #  			else
 #  				faad -o "$tmpdir/audio$track"_"$audio_index_padded.wav" "$file" 
 #  			fi
-#  		elif [ "$suffix" == "ogg" ] ; then
-#  #			myecho "[dvd-slideshow] decoding ogg audio... be patient."
-#  			if [ "$audiosmp" -eq 1 ] ; then
-#  				oggdec --quiet -o "$tmpdir/audio$track"_"$audio_index_padded.wav" "${file}" &
-#  			else
-#  				oggdec --quiet -o "$tmpdir/audio$track"_"$audio_index_padded.wav" "${file}"
-#  			fi
-#  		elif [ "$suffix" == "wav" ] ; then
-#  #			myecho "[dvd-slideshow] processing wav audio... we will splice it later."
-#  			cp "${file}" "$tmpdir/audio$track"_"$audio_index_padded.wav"
 #  		elif [ "$file" == 'silence' ]; then
 #  			if [ "$audiosmp" -eq 1 ] ; then
 #  				sox -t raw -s -2 -c 2 -r $audio_sample_rate /dev/zero -t wav -c 2 -r $audio_sample_rate "$tmpdir/audio$track"_"$audio_index_padded.wav" trim 0 1 &

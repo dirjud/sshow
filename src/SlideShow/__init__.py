@@ -593,8 +593,8 @@ def initialize_pipeline(pipeline, config):
         config["sharpen"]=''
 
     audio_index = {}
-    audio_length = 0
-    video_length = 0
+    audio_duration = 0
+    video_duration = 0
     prev_element = None
     video_element_count  = 0
     for pos, element in enumerate(pipeline):
@@ -618,10 +618,10 @@ def initialize_pipeline(pipeline, config):
         prev_element = element
     
         if isSlide(element):
-            video_length += element.duration
+            video_duration += element.duration
             video_element_count += 1
         elif element.isa("Audio"):
-            audio_length += element.duration
+            audio_duration += element.duration
     
         try:
             if element.isa("Transition") and element.name == 'fadein':
@@ -653,7 +653,9 @@ def initialize_pipeline(pipeline, config):
         except Exception, e:
             raise Exception("%s: %s" % (element.location, str(e)))
 
-    return dict(audio_length=audio_length, video_length=video_length, video_element_count=video_element_count)
+    print "Audio Duration:", audio_duration
+    print "Video Duration:", video_duration
+    return dict(audio_duration=audio_duration, video_duration=video_duration, video_element_count=video_element_count)
 
 
 
@@ -767,6 +769,7 @@ def build(pipeline, config, progress):
 
     for element in pipeline:
         if(element.isa("Background") and element.duration == 0): 
+            element.create_slide(config)
             continue # drop 0 duration background slides
     
         if element.isa("Audio"):

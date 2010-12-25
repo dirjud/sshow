@@ -305,17 +305,28 @@ class SlideShowApp(object):
     def load_pipeline(self, filename):
         """Loads 'filename' as current pipeline"""
         self.pipeline = SlideShow.read_pipeline(filename, self.config)
-        SlideShow.initialize_pipeline(self.pipeline, self.config)
+        info = SlideShow.initialize_pipeline(self.pipeline, self.config)
+        self.info = info
         self.pipelist.clear()
         for element in self.pipeline:
             self.pipelist.append([element, element])
         self.window.set_title("SlideShow: "+os.path.basename(self.config["input_txtfile"]))
         self.dirty = True
 
+    def remove_element(self, element):
+        if SlideShow.isSlide(element):
+            self.info["video_duration"] -= element.duration
+
+    def add_element(self, element):
+        if SlideShow.isSlide(element):
+            self.info["video_duration"] += element.duration
+
     def row_edited_cb(self, cell, path, text, user_data=None):
         prevelement = self.pipelist[path][1]
         newelement = SlideShow.Reader.DVDSlideshow.parse_line(text, self.config, prevelement.location)
         prevelement.replace(newelement)
+        self.remove_element(prevelement)
+        self.add_element(newelement)
 
         self.pipelist[path] = [ newelement, newelement ]
         self.on_cursor_changed(self.pipeview)
