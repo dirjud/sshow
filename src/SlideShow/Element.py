@@ -136,6 +136,9 @@ class Element():
         if self.next:
             self.next.prev = self.prev
 
+    def done(self):
+        pass
+
 def encode(x):
     return x.replace(":","\:")
 
@@ -206,6 +209,9 @@ class Image(Element):
             progress.task_update(N)
             progress.task_done()
             return [ (self.filename, N), ]
+        
+    def done(self):
+        KenBurns.cleanup(self.config, self.filename)
 
     def create_slide(self, config):
         # create_slide $file $outfile $transparent

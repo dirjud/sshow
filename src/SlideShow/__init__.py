@@ -1,3 +1,4 @@
+import Img
 import Reader
 import logging, time, sys, os, optparse, subprocess
 log = logging.getLogger(__name__)
@@ -766,6 +767,7 @@ def build(pipeline, config, progress):
     prev_imgs0     = []
 
     count=0
+    prev_slide = None
 
     for element in pipeline:
         if(element.isa("Background") and element.duration == 0): 
@@ -792,12 +794,12 @@ def build(pipeline, config, progress):
         prev_transition = find_prev_transition(element)
         next_transition = find_next_transition(element)
         if prev_transition:
-            prev_frames = num_frames(config, element.prev.duration)
+            prev_frames = num_frames(config, prev_transition.duration)
         else:
             prev_frames = 0
         
         if next_transition:
-            next_frames = num_frames(config, element.next.duration)
+            next_frames = num_frames(config, next_transition.duration)
         else:
             next_frames = 0
     
@@ -817,7 +819,10 @@ def build(pipeline, config, progress):
             for img in comp_imgs:
                 encode(encoder, img[0], img[1], config)
                 total_frames += img[1]
-    
+
+        if prev_slide:
+            prev_slide.done()
+
         # process current frames (i.e. frames not in transition)
         for img in cur_imgs:
             encode(encoder, img[0], img[1], config)
@@ -825,7 +830,9 @@ def build(pipeline, config, progress):
     
         # save off the frames of the next transition for the next time around
         prev_imgs0 = next_imgs
+        prev_slide = element
 
+    prev_slide.done()
     encoder.stdin.close()
     encoder.wait()
     

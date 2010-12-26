@@ -9,20 +9,18 @@ enum {
 
 
 static void __rgb2yCrCb(int r, int g, int b, int *y, int *Cr, int *Cb) {
-  *y  =       (19595*r + 38470*g +  7471*b) / 65536;
-  *Cb = 128 - (11010*r - 21710*g + 32768*b) / 65536;
-  *Cr = 128 + (36372*r - 27439*g -  5329*b) / 65536;
+  *y  =       ( 19595*r + 38469*g +  7471*b) / 65536;
+  *Cb = 128 + (-11058*r - 21709*g + 32768*b) / 65536;
+  *Cr = 128 + ( 32768*r - 27439*g -  5328*b) / 65536;
 }
 
 static void __yCrCb2rgb(int y, int Cr, int Cb, int *r, int *g, int *b) {
-  int A  = y;
-  int B  = -(Cb-128);
+  int B  = (Cb-128);
   int R  = (Cr-128);
-  *r = -136784 * A +             +  191776 * R;
-  *g =  197847 * A +  -29212 * B +  -97745 * R;
-  *b =  -85122 * A +  150426 * B +     323 * R;
+  *r = (65536 * y +                 91991 * R) / 65536;
+  *g = (65536 * y +  -22552 * B +  -46801 * R) / 65536;
+  *b = (65536 * y +  116130 * B              ) / 65536;
 }
-
 
 typedef struct {
   PyObject_HEAD
@@ -95,13 +93,39 @@ static int img_init(imgObject *self, PyObject *args, PyObject *kwds) {
   return __img_init(self, width, height, format);
 }
 
-static PyObject *scale_and_crop(imgObject *self, PyObject *args, PyObject *kw) {
-  int up, down, row, col, xs, ys, poss, posd, y, Cr, Cb;
-  double x0, y0;
-  imgObject *dest = NULL;
-  static char *kwlist[] = {"down", "up", "x0", "y0", "dest", NULL};
 
-  if (!PyArg_ParseTupleAndKeywords(args, kw, "iiddO", kwlist, &down, &up, &x0, &y0, &dest))
+static PyObject *toformat(imgObject *self, PyObject *args, PyObject *kw) {
+  int format, i;
+  static char *kwlist[] = {"format", NULL};
+
+  if (!PyArg_ParseTupleAndKeywords(args, kw, "i", kwlist, &format))
+    return NULL;  
+
+  if(format == self->format) {
+    Py_RETURN_NONE;
+  }
+
+  if(self->format == RGB && format == YUV) {
+    for(i=0; i < self->width*self->height; i++)
+      __rgb2yCrCb(self->r[i], self->g[i], self->b[i], self->y+i, self->Cr+i, self->Cb+i);
+  } else if(self->format == YUV && format == RGB) {
+    for(i=0; i < self->width*self->height; i++)
+      __yCrCb2rgb(self->y[i], self->Cr[i], self->Cb[i], self->r+i, self->g+i, self->b+i);
+  } else {
+    PyErr_SetString(PyExc_Exception, "unsupported conversion.");
+    return NULL;
+  }
+  self->format = format;
+  Py_RETURN_NONE;
+}
+
+static PyObject *scale_and_crop(imgObject *self, PyObject *args, PyObject *kw) {
+  int row, col, xs, ys, poss, posd, y, Cr, Cb;
+  double x0, y0, x1, y1;
+  imgObject *dest = NULL;
+  static char *kwlist[] = {"x0", "y0", "x1", "y1", "dest", NULL};
+
+  if (!PyArg_ParseTupleAndKeywords(args, kw, "ddddO", kwlist, &x0, &y0, &x1, &y1, &dest))
     return NULL;
  
   if(self->format != YUV) {
@@ -109,16 +133,28 @@ static PyObject *scale_and_crop(imgObject *self, PyObject *args, PyObject *kw) {
     return NULL;
   }
 
+  double zx = (x1-x0)/(dest->width -1);
+  double zy = (y1-y0)/(dest->height-1);
+
   if(dest->format == RGB) {
     for(row=0; row < dest->height; row++) {
       for(col=0; col < dest->width; col++) {
-	xs = x0 + (col + 0.5) * down / up;
-	ys = y0 + (row + 0.5) * down / up;
+	xs = x0 + (col + 0.5) * zx;
+	ys = y0 + (row + 0.5) * zy;
 	poss = xs + ys*self->width;
-	y  = self->y[poss];
-	Cr = self->Cr[poss];
-	Cb = self->Cb[poss];
+	if(xs < 0 || xs >= self->width || ys < 0 || ys >= self->height) {
+	  y  = 0;
+	  Cr = 128;
+	  Cb = 128;
+	} else {
+	  y  = self->y[poss];
+	  Cr = self->Cr[poss];
+	  Cb = self->Cb[poss];
+	}
 	posd = row*dest->width + col;
+	//if(row<2 && col<2) {
+	//  printf("d=%d,%d,%d s=%d,%d,%d zx=%g zy=%g\n", col,row,posd,xs,ys,poss,zx,zy);
+	//}
 	__yCrCb2rgb(y,Cr,Cb, dest->r+posd, dest->g+posd, dest->b+posd);
       }
     }
@@ -157,6 +193,7 @@ static PyMethodDef imgo_methods[] = {
     {"scale_and_crop", (PyCFunction) scale_and_crop, METH_VARARGS | METH_KEYWORDS,
      "Pass in a tuple of upper left crop position, a downsample factor, an up sample factor, and an image into which the new result will be placed." },
     {"write", (PyCFunction) write_img, METH_VARARGS | METH_KEYWORDS, ""},
+    {"toformat", (PyCFunction) toformat, METH_VARARGS | METH_KEYWORDS, "Switch the format of this image to 'format'"},
     {NULL}  /* Sentinel */
 };
 
@@ -281,7 +318,7 @@ static PyMethodDef img_methods[] = {
 #define PyMODINIT_FUNC void
 #endif
 PyMODINIT_FUNC
-initImage(void) 
+initImg(void) 
 {
   PyObject* m;
   g_type_init();
@@ -290,7 +327,7 @@ initImage(void)
   if (PyType_Ready(&imgType) < 0)
     return;
   
-  m = Py_InitModule3("Image", img_methods,
+  m = Py_InitModule3("Img", img_methods,
 		     "Image module");
   
   Py_INCREF(&imgType);

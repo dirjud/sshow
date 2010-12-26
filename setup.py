@@ -4,7 +4,6 @@ import commands
 def pkgconfig(*packages, **kw):
     flag_map = {'-I': 'include_dirs', '-L': 'library_dirs', '-l': 'libraries'}
     cmd = "pkg-config --libs --cflags %s" % ' '.join(packages)
-    print cmd
     for token in commands.getoutput(cmd).split():
         if flag_map.has_key(token[:2]):
             kw.setdefault(flag_map.get(token[:2]), []).append(token[2:])
@@ -15,7 +14,7 @@ def pkgconfig(*packages, **kw):
             kw[k] = list(set(v))
     return kw
 
-module1 = Extension('SlideShow.Image',
+module1 = Extension('SlideShow.Img',
                     define_macros = [('MAJOR_VERSION', '1'),
                                      ('MINOR_VERSION', '0')],
                     sources = ['src/ext/Image.c'],
@@ -32,7 +31,7 @@ setup (name = 'SlideShow',
        package_dir = { 'SlideShow'      : "src/SlideShow",
                        'SlideShow.pygtk': "src/SlideShow/pygtk",
                        },
-       package_data = { 'SlideShow.pygtk' : [ '*.glade'],
+       package_data = { 'SlideShow.pygtk' : [ '*.glade', '*.png'],
                         },
        scripts = [ 'src/slideshow', ],
        ext_modules = [module1])
