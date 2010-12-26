@@ -3,14 +3,15 @@ import logging, math, os
 log = logging.getLogger(__name__)
 
 def accelerate(frame, frames, accel):
-        x = 2.0*frame/(frames-1) - 1 # normalize between -1 and 1
-        y = 1./(max(0, min(accel,100)) / 100. + 1)
-        if x > 0:
-            sign = 1
-        else:
-            sign = -1
-        #return (2*abs(x)**y*sign - x + 1)*(frames-1)/2.
-        return (abs(x)**y*sign + 1)*(frames-1)/2.
+    return frame
+#        x = 2.0*frame/(frames-1) - 1 # normalize between -1 and 1
+#        y = 1./(max(0, min(accel,100)) / 100. + 1)
+#        if x > 0:
+#            sign = 1
+#        else:
+#            sign = -1
+#        #return (2*abs(x)**y*sign - x + 1)*(frames-1)/2.
+#        return (abs(x)**y*sign + 1)*(frames-1)/2.
 
         
 
