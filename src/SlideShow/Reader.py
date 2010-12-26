@@ -1,5 +1,5 @@
 import Element
-import logging
+import logging, re
 log = logging.getLogger(__name__)
 
 class FileLocation():
@@ -32,6 +32,8 @@ class DVDSlideshow():
         for line in f:
             linenum += 1 
             location = FileLocation(filename, linenum, line)
+            
+            line = re.sub(r"(#" + r"[\dA-Fa-f]"*6 + r")", r"\\\g<0>", line) # protect colors from getting commented out
 
             if line.startswith("include"):
                 DVDSlideshow.parse_input_file(DVDSlideshow.parse_key_value(line)[1], pipeline, config)
@@ -109,21 +111,17 @@ class DVDSlideshow():
         # now get the extension
         extension = element.split(".")[-1].lower()
 
-        # this is a hack to escape background colors that start with #
-        if element == "background":
-            fields = map(str.strip, params.split(":"))
-            if(len(fields)>=3) and fields[2] and fields[2][0] == "#":
-                fields[2] = "\\"+fields[2]
-            params = ":".join(fields)
+        ## this is a hack to escape background colors that start with #
+        #if element == "background":
+        #    fields = map(str.strip, params.split(":"))
+        #    if(len(fields)>=3) and fields[2] and fields[2][0] == "#":
+        #        fields[2] = "\\"+fields[2]
+        #    params = ":".join(fields)
 
         # replace escaped characters
         escapes = ["\\", "#", ":"]
         for i,e in enumerate(escapes): # replace escaped characters w/ special ascii
             params = params.replace("\\"+e, chr(i+1))
-            
-            
-                
-            pass
         else:
             params = params.split("#", 1)[0] # remove comments
     
