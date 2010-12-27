@@ -70,7 +70,7 @@ def annotate(config, imgs, params, progress):
                 new_imgs.append([filename, extra])
                 done = True
         else:
-            new_imgs.append(filename, num_frames)
+            new_imgs.append([filename, num_frames])
 
     progress.task_done()
     return new_imgs
