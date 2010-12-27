@@ -54,6 +54,14 @@ class Config(dict):
             bottomtitle_text_location_x=0,
             bottomtitle_text_location_y=155,
 
+            # annotate
+            annotate_pointsize = "8%",
+            annotate_font      = "Helvetica-Bold",
+            annotate_fill      = "#FFFFFF",
+            annotate_stroke    = "#000000",
+            annotate_position  = "50%,90%",
+            annotate_undercolor= None,
+            
             theme='default',
             themedir='/opt/sshow/themes',  # LSB/FHS compliant.  see: http://www.pathname.com/fhs/pub/fhs-2.3.html#OPTADDONAPPLICATIONSOFTWAREPACKAGES
             local_themedir="~/.sshow/themes",  # local theme directory
@@ -125,6 +133,12 @@ class Config(dict):
         "bottomtitle_bar_height"     ,
         "bottomtitle_text_location_x",
         "bottomtitle_text_location_y",
+        "annotate_pointsize"         ,
+        "annotate_font"              ,
+        "annotate_fill"              ,
+        "annotate_stroke"            ,
+        "annotate_position"          ,
+        "annotate_undercolor"        ,
         "border"                     ,
         "slideshow_image_filter"     ,
         "sharpen"                    ,
@@ -671,6 +685,7 @@ def encode(encoder, image, numframes, config):
 
     data = p.stdout.read()
     encoder.stdin.write(data)
+    #encoder.stdin.flush()
 
 def num_frames(config, duration):
     return int(config["framerate"] * duration / 1000)
@@ -760,7 +775,8 @@ def build(pipeline, config, progress):
         encoder_cmd = "mpeg2enc "+config["mpeg2enc_params"]+" -o "+config["workdir"]+"/video.mpg -" # < "$workdir"/$yuvfifo >> "$outdir/$logfile" 2>&1 & 
     
     log.info(encoder_cmd)
-    encoder = subprocess.Popen(encoder_cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    #encoder = subprocess.Popen(encoder_cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    encoder = subprocess.Popen(encoder_cmd, shell=True, stdin=subprocess.PIPE)
         
     total_frames   = 0
     audio_duration = 0
