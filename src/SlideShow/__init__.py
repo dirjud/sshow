@@ -77,7 +77,7 @@ class Config(dict):
             write_last_subtitle=0,
             write_last_subtitle2=0,
             commandline_audiofiles=0,
-            nocleanup=1, 
+            nocleanup=0, 
             function_error=0,
             vcd=0,
             svcd=0,
