@@ -152,7 +152,7 @@ static PyObject *scale_and_crop(imgObject *self, PyObject *args, PyObject *kw) {
 	  Cb = self->Cb[poss];
 	}
 	posd = row*dest->width + col;
-	//if(row<2 && col<2) {
+	//if(row<10 && col<3) {
 	//  printf("d=%d,%d,%d s=%d,%d,%d zx=%g zy=%g\n", col,row,posd,xs,ys,poss,zx,zy);
 	//}
 	__yCrCb2rgb(y,Cr,Cb, dest->r+posd, dest->g+posd, dest->b+posd);
@@ -271,21 +271,30 @@ static imgObject* read_file(char *filename, int format) {
      
 
   guint8 *ibuf = gdk_pixbuf_get_pixels(pixbuf);
-  int size     = img->width*img->height;
-  int ipos=0, opos=0;
+  int row_stride = gdk_pixbuf_get_rowstride(pixbuf);
+  //printf("rowstride=%d width=%d\n", row_stride, img->width);
+  int ipos=0, opos=0, row, col;
   if(format == RGB) {
-    for(opos=0,ipos=0; opos<size; ++opos) {
-      img->r[opos] = ibuf[ipos++]; 
-      img->g[opos] = ibuf[ipos++]; 
-      img->b[opos] = ibuf[ipos++]; 
+    for(row=0; row < img->height; row++) {
+      ipos = row*row_stride;
+      for(col=0; col < img->width; col++) {
+	img->r[opos] = ibuf[ipos++]; 
+	img->g[opos] = ibuf[ipos++]; 
+	img->b[opos] = ibuf[ipos++]; 
+	opos++;
+      }
     }
   } else if(format == YUV) {
     int r,g,b;
-    for(opos=0,ipos=0; opos<size; ++opos) {
-      r = ibuf[ipos++]; 
-      g = ibuf[ipos++]; 
-      b = ibuf[ipos++]; 
-      __rgb2yCrCb(r, g, b, img->y+opos, img->Cr+opos, img->Cb+opos);
+    for(row=0; row < img->height; row++) {
+      ipos = row*row_stride;
+      for(col=0; col < img->width; col++) {
+	r = ibuf[ipos++]; 
+	g = ibuf[ipos++]; 
+	b = ibuf[ipos++]; 
+	__rgb2yCrCb(r, g, b, img->y+opos, img->Cr+opos, img->Cb+opos);
+	opos++;
+      }
     }
   }
   ret = img;
