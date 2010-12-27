@@ -1,4 +1,4 @@
-import SlideShow
+import SlideShow, Element
 import logging, math, os
 log = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ def kenburns(config, params, ifile, frames, progress):
         #print frame, a
         xy = [ (xy1-xy0) / float(frames-1) * a + xy0 for xy1, xy0 in zip(img1,img0) ]
         src_img.scale_and_crop(xy[0], xy[1], xy[2], xy[3], dest_img)
-        ofile = config["workdir"]+"/"+os.path.basename(ifile)+"%04d"%frame+".ppm"
+        ofile = config["workdir"]+"/"+os.path.basename(ifile)+"_"+Element.get_unique()+".ppm"
         dest_img.write(ofile)
         imgs.append((ofile, stepsize))
 

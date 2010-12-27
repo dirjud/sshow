@@ -223,8 +223,9 @@ class Image(Element):
         return imgs
 
     def done(self):
-        KenBurns.cleanup(self.config, self.filename)
-        Annotate.cleanup(self.config, self.filename)
+        if not(self.config["nocleanup"]):
+            KenBurns.cleanup(self.config, self.filename)
+            Annotate.cleanup(self.config, self.filename)
 
     def create_slide(self, config):
         # create_slide $file $outfile $transparent

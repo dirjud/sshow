@@ -65,8 +65,8 @@
                 <property name="can_focus">True</property>
                 <property name="invisible_char">&#x25CF;</property>
                 <property name="width_chars">0</property>
-                <signal name="activate" handler="on_duration"/>
                 <signal name="focus_out_event" handler="on_duration"/>
+                <signal name="activate" handler="on_duration"/>
               </object>
               <packing>
                 <property name="left_attach">1</property>
@@ -83,8 +83,8 @@
                 <property name="can_focus">True</property>
                 <property name="invisible_char">&#x25CF;</property>
                 <property name="width_chars">2</property>
-                <signal name="activate" handler="on_subtitle"/>
                 <signal name="focus_out_event" handler="on_subtitle"/>
+                <signal name="activate" handler="on_subtitle"/>
               </object>
               <packing>
                 <property name="left_attach">1</property>
@@ -203,9 +203,9 @@
     <child>
       <object class="GtkMenuItem" id="new_text">
         <property name="visible">True</property>
-        <property name="label" translatable="yes">Add Text</property>
+        <property name="label" translatable="yes">Add Annotation</property>
         <property name="use_underline">True</property>
-        <signal name="activate" handler="on_fx_new_text"/>
+        <signal name="activate" handler="on_fx_new_annotation"/>
       </object>
     </child>
   </object>

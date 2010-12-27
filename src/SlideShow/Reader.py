@@ -20,6 +20,28 @@ class DVDSlideshow():
         pipeline = []
         DVDSlideshow.parse_input_file(self.filename, pipeline, config)
         return pipeline
+
+    @staticmethod
+    def escape(lines, escapes):
+        # replace escaped characters
+        for i,e in enumerate(escapes): # replace escapes w/ special ascii
+            if type(lines) is str:
+                lines = lines.replace("\\"+e, chr(i+1))
+            else:
+                for j, line in enumerate(fields):
+                    lines[j] = line.replace("\\"+e, chr(i+1))
+        return lines
+
+    @staticmethod
+    def unescape(lines, escapes):
+        for i, e in enumerate(escapes): #restore escaped chars
+            if type(lines) is str:
+                lines = lines.replace(chr(i+1), e)
+            else:
+                for j, line in enumerate(lines):
+                    lines[j] = line.replace(chr(i+1), e)
+        return lines
+    
         
     @staticmethod
     def parse_input_file(filename, pipeline, config):
@@ -33,8 +55,6 @@ class DVDSlideshow():
             linenum += 1 
             location = FileLocation(filename, linenum, line)
             
-            line = re.sub(r"(#" + r"[\dA-Fa-f]"*6 + r")", r"\\\g<0>", line) # protect colors from getting commented out
-
             if line.startswith("include"):
                 DVDSlideshow.parse_input_file(DVDSlideshow.parse_key_value(line)[1], pipeline, config)
                 continue
@@ -53,8 +73,20 @@ class DVDSlideshow():
         if not(line):     # check if this is an empty line
             return Element.EmptyLine(location)
         
-        if line[0] == "#":  # remove comments
+        if line[0] == "#":  # grab whole line comments as special elements
             return Element.Comment(location, line)
+
+        # Remove trailing comments, but first we need to protect
+        # colors of the form #123456 from getting commented out
+        line = re.sub(r"(#" + r"[\dA-Fa-f]"*6 + r")", r"\\\g<0>", line) 
+
+        # protect any \# characters from being interpreted as a comment
+        line = DVDSlideshow.escape(line, ["#"])
+
+        line = line.split("#", 1)[0] # remove comments
+
+        # Restore escaped # characters
+        line = DVDSlideshow.unescape(line, ["#"])
 
         #if DVDSlideshow.check_theme(line, config):
         #    continue
@@ -98,6 +130,8 @@ class DVDSlideshow():
 
     @staticmethod
     def get_element(line, location):
+        line = DVDSlideshow.escape(line, ["\\",":"])
+
         try:
             # split at the first : to allow for different parsing depending
             # on what type of element this is
@@ -110,27 +144,13 @@ class DVDSlideshow():
 
         # now get the extension
         extension = element.split(".")[-1].lower()
-
-        ## this is a hack to escape background colors that start with #
-        #if element == "background":
-        #    fields = map(str.strip, params.split(":"))
-        #    if(len(fields)>=3) and fields[2] and fields[2][0] == "#":
-        #        fields[2] = "\\"+fields[2]
-        #    params = ":".join(fields)
-
-        # replace escaped characters
-        escapes = ["\\", "#", ":"]
-        for i,e in enumerate(escapes): # replace escaped characters w/ special ascii
-            params = params.replace("\\"+e, chr(i+1))
-        else:
-            params = params.split("#", 1)[0] # remove comments
     
         fields = params.split(":") # split parameters into fields
-    
-        for i, e in enumerate(escapes): # restore escaped chars (no longer escaped)
-            for j, field in enumerate(fields):
-                fields[j] = field.replace(chr(i+1), e)
-    
+
+        # restore any escaped characters back
+        fields = DVDSlideshow.unescape(fields, ["\\",":"])
+
+        
         if extension in Element.Image.extensions:
             return DVDSlideshow.getImage(location, element, extension, fields)
         elif extension in Element.Audio.extensions:

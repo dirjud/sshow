@@ -260,7 +260,7 @@ class ImageSettings(Settings):
         builder.add_from_file(path+"/imagesettings.glade")
 
         sigs = {}
-        for sig in ["on_duration", "on_subtitle", "on_filename", "on_fx_delete", "on_fx_new_kenburns", "on_fx_new_crop", "on_fx_new_text", "on_filename_clicked", "on_fxview_button_press" ]:
+        for sig in ["on_duration", "on_subtitle", "on_filename", "on_fx_delete", "on_fx_new_kenburns", "on_fx_new_crop", "on_fx_new_annotation", "on_filename_clicked", "on_fxview_button_press" ]:
             sigs[sig] = eval("self."+sig)
 
         builder.connect_signals(sigs)
@@ -293,7 +293,7 @@ class ImageSettings(Settings):
         self.fxview.append_column(paramcol)
         cell = gtk.CellRendererText()
         cell.set_property("editable", True)
-        #cell.connect('edited', self.on_fx_param)
+        cell.connect('edited', self.on_fx_param_edited)
         paramcol.pack_start(cell, True)
         paramcol.add_attribute(cell, 'text', 1)
         
@@ -371,19 +371,32 @@ class ImageSettings(Settings):
             self.element_updated()
             self.on_paint()
 
-    def on_fx_new_kenburns(self, evt):
-        if "kenburns" in [ fx.name for fx in self.element.effects ]:
-            return
-        fx = SlideShow.Element.Effect("kenburns", "60%;40%,40%;85%;50%,50%")
+    def on_fx_param_edited(self, cell, path, param, user_data=None):
+        fx = self.element.effects[int(path)]
+        fx.param = param
+        self.fxstore[path] = [ fx.name, fx.param ]
+        self.element_updated()
+        self.on_paint()
+
+    def insert_fx(self, fx):
         self.element.effects.append(fx)
         self.fxstore.append([fx.name, fx.param])
         self.element_updated()
         self.on_paint()
 
+    def on_fx_new_kenburns(self, evt):
+        if "kenburns" in [ fx.name for fx in self.element.effects ]:
+            return
+        fx = SlideShow.Element.Effect("kenburns", "60%;40%,40%;85%;50%,50%")
+        self.insert_fx(fx)
+
     def on_fx_new_crop(self, evt):
         pass
-    def on_fx_new_text(self, evt):
-        pass
+
+    def on_fx_new_annotation(self, evt):
+        fx = SlideShow.Element.Effect("annotate","text=Change Me;font=Helvetica-Bold;pointsize=8%;position=50%,90%;fill=white;stroke=black")
+        self.insert_fx(fx)
+
     def on_fxview_button_press(self, view, event):
         if event.button == 3:
             pthinfo = view.get_path_at_pos(int(event.x), int(event.y))

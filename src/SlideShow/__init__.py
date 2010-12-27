@@ -669,7 +669,8 @@ def encode(encoder, image, numframes, config):
     else:
         p.stdout.readline() # strip first line of yuv data
 
-    encoder.stdin.write(p.stdout.read())
+    data = p.stdout.read()
+    encoder.stdin.write(data)
 
 def num_frames(config, duration):
     return int(config["framerate"] * duration / 1000)
