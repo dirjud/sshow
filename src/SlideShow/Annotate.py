@@ -64,10 +64,12 @@ def annotate(config, imgs, params, progress):
             #print convert
             Element.cmd(convert)
             new_imgs.append([ofile, num_frames])
-            if(frame_count > dur_frames):
+            if(frame_count >= dur_frames):
                 extra = frame_count - dur_frames
+                print extra
                 new_imgs[-1][1] -= extra
-                new_imgs.append([filename, extra])
+                if extra:
+                    new_imgs.append([filename, extra])
                 done = True
         else:
             new_imgs.append([filename, num_frames])

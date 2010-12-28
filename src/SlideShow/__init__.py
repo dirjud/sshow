@@ -675,6 +675,9 @@ def initialize_pipeline(pipeline, config):
 
 
 def encode(encoder, image, numframes, config):
+    if numframes <= 0:
+        return
+
     ppm_cmd = "ppmtoy4m -v "+str(config["verbosity"])+" -n "+str(numframes)+" -r -S "+config["subsample"]+" -F "+config["ppmtoy4m_frc"]+" -A "+config["ppmtoy4m_aspect"]+" -I p "+image
     #log.info(ppm_cmd)
     p = subprocess.Popen(ppm_cmd, shell=True, stdout=subprocess.PIPE)
