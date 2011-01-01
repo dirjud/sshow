@@ -1,5 +1,5 @@
+INSTALL
 Makefile
-Makefile.am
 Makefile.in
 aclocal.m4
 autom4te.cache/
@@ -9,7 +9,6 @@ config.h.in
 config.status
 config.sub
 configure
-configure.ac
 depcomp
 install-sh
 libtool
