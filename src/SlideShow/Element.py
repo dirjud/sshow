@@ -194,7 +194,7 @@ class Image(Element):
 
     def __str__(self):
         x = "%s:%g:%s" % (encode(self.filename_orig), self.duration/1000., encode(self.subtitle))
-        fx = ":".join([ "%s:%s" % (y.name,y.param) for y in self.effects ])
+        fx = ":".join([ "%s:%s" % (y.name,encode(y.param)) for y in self.effects ])
         if(fx):
             x += ":" + fx
         return x
