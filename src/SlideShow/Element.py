@@ -1,6 +1,6 @@
 import os, subprocess, hashlib, time, sys, gst
 import logging
-import KenBurns, Annotate, transition
+import Annotate, transition
 
 log = logging.getLogger(__name__)
 
@@ -172,7 +172,7 @@ class Image(Element):
 
     def initialize(self):
         if not(os.path.exists(self.filename)):
-            raise Exception("Image "+filename+" does not exist.")
+            raise Exception("Image "+self.filename+" does not exist.")
         self.width, self.height = get_dims(self.filename)
 
     def __str__(self):
@@ -182,59 +182,68 @@ class Image(Element):
             x += ":" + fx
         return x
 
-    def get_bin(self):
+    def get_bin(self, duration=None):
+        if duration is None:
+            duration = self.duration
+
         fx_names = [ x.name for x in self.effects ]
-        if("kenburns" in fx_names):
-            return self.get_kenburns_bin()
+        if("kenburns" in fx_names or True):
+            return self.get_kenburns_bin(duration)
         else:
-            return self.get_crop_bin()
+            return self.get_crop_bin(duration)
         
-    def get_crop_bin(self):
+    def get_crop_bin(self, duration):
+
         self.gstbin = gst.Bin()
         elements = []
-        for name in [ "filesrc", "decodebin2", "imagefreeze", "ffmpegcolorspace", "kenburns", "capsfilter",  ]:
+        for name in [ "filesrc", "decodebin2", "ffmpegcolorspace", "kenburns", "capsfilter", "imagefreeze",   ]:
             elements.append(gst.element_factory_make(name))
             exec("%s = elements[-1]" % name)
+        caps2 = gst.element_factory_make("capsfilter")
+        elements.append(caps2)
     
         self.gstbin.add(*elements)
         filesrc.link(decodebin2)
-        imagefreeze.link(ffmpegcolorspace)
         ffmpegcolorspace.link(kenburns)
         kenburns.link(capsfilter)
-
-        filesrc.props.location = self.filename
-        capsfilter.props.caps = self.config["caps"]
-        kenburns.props.zoom1 = 1.0
+        capsfilter.link(imagefreeze)
+        imagefreeze.link(caps2)
+        
+        filesrc.props.location  = self.filename
+        capsfilter.props.caps   = self.config["caps"]
+        caps2.props.caps        = self.config["caps"]
+        kenburns.props.zoom1    = 1.0
         kenburns.props.xcenter1 = 0.5
         kenburns.props.ycenter1 = 0.5
-        kenburns.props.zoom2 = 1.0
+        kenburns.props.zoom2    = 1.0
         kenburns.props.xcenter2 = 0.5
         kenburns.props.ycenter2 = 0.5
-        kenburns.props.duration = self.duration
+        kenburns.props.duration = duration
 
         def on_pad(src_element, pad, data, sink_element):
             sinkpad = sink_element.get_compatible_pad(pad, pad.get_caps())
             pad.link(sinkpad)
 
-        decodebin2.connect("new-decoded-pad", on_pad, imagefreeze)
-        self.gstbin.add_pad(gst.GhostPad("src", capsfilter.get_pad("src")))
+        decodebin2.connect("new-decoded-pad", on_pad, ffmpegcolorspace)
+        self.gstbin.add_pad(gst.GhostPad("src", caps2.get_pad("src")))
         return self.gstbin
         
 
-    def get_kenburns_bin(self):
+    def get_kenburns_bin(self, duration):
 
         self.gstbin = gst.Bin()
         elements = []
-        for name in [ "filesrc", "decodebin2", "imagefreeze", "kenburns", "capsfilter", ]:
+        for name in [ "filesrc", "decodebin2", "ffmpegcolorspace", "imagefreeze", "kenburns", "capsfilter", ]:
             elements.append(gst.element_factory_make(name, name))
             exec("%s = elements[-1]" % name)
     
         filesrc.set_property("location",  self.filename)
-        kenburns.set_property("duration", self.duration)
+        kenburns.set_property("duration", duration)
         capsfilter.set_property("caps", self.config["caps"])
     
         self.gstbin.add(*elements)
         filesrc.link(decodebin2)
+        ffmpegcolorspace.link(imagefreeze)
         imagefreeze.link(kenburns)
         kenburns.link(capsfilter)
 
@@ -243,25 +252,82 @@ class Image(Element):
             i = fx_names.index("kenburns")
             param = self.effects[i].param
             zstart, pstart, zend, pend = map(str.strip, param.split(";"))
-            kenburns.props.zoom1 = float(zstart.replace("%",""))/100.
-            kenburns.props.zoom2 = float(zend.replace("%",""))/100.
-            x1,y1 = pstart.split(",")
-            x2,y2 = pend.split(",")
-            kenburns.props.xcenter1 = float(x1.replace("%",""))/100.
-            kenburns.props.ycenter1 = float(y1.replace("%",""))/100.
-            kenburns.props.xcenter2 = float(x2.replace("%",""))/100.
-            kenburns.props.ycenter2 = float(y2.replace("%",""))/100.
-            
+            zoom1, xcenter1, ycenter1 = self.parse_kb_params(zstart, pstart)
+            zoom2, xcenter2, ycenter2 = self.parse_kb_params(zend,   pend)
+            kenburns.props.zoom1    = zoom1
+            kenburns.props.zoom2    = zoom2 
+            kenburns.props.xcenter1 = xcenter1
+            kenburns.props.ycenter1 = ycenter1
+            kenburns.props.xcenter2 = xcenter2
+            kenburns.props.ycenter2 = ycenter2
+        else:
+            kenburns.props.zoom1    = 1.0
+            kenburns.props.xcenter1 = 0.5
+            kenburns.props.ycenter1 = 0.5
+            kenburns.props.zoom2    = 1.0
+            kenburns.props.xcenter2 = 0.5
+            kenburns.props.ycenter2 = 0.5
+
         
 
         def on_pad(src_element, pad, data, sink_element):
             sinkpad = sink_element.get_compatible_pad(pad, pad.get_caps())
             pad.link(sinkpad)
 
-        decodebin2.connect("new-decoded-pad", on_pad, imagefreeze)
+        decodebin2.connect("new-decoded-pad", on_pad, ffmpegcolorspace)
         self.gstbin.add_pad(gst.GhostPad("src", capsfilter.get_pad("src")))
         return self.gstbin
-        
+
+    def parse_kb_params(self, zoom, pos):
+        img_ratio = self.width / float(self.height)
+        vid_ratio = self.config["aspect_ratio_float"]
+
+        if(img_ratio > vid_ratio):
+            src_width = self.width
+            src_height = int(round(src_width / vid_ratio))
+        else:
+            src_height = self.height
+            src_width = int(round(src_height * vid_ratio))
+
+        if zoom == "imagewidth":
+            z = self.width / float(src_width)
+        elif zoom == "imageheight":
+            z = self.height / float(src_height)
+        elif(zoom.endswith("%")):
+            z = eval(zoom.replace("%",""))/100.
+        else:
+            raise Exception("Unknown kenburns zoom parameter '%s'" % (zoom, ))
+
+        if pos[:3] in ["top", "bot", "lef", "rig", "mid"]:
+            if pos.find("bottom") > -1:
+                yc = (src_height - self.height)/2. - (src_height  * z)/2 + self.height
+            elif pos.find("top") > -1:
+                yc = (src_height - self.height)/2. + (src_height  * z)/2
+            else:
+                yc = src_height / 2.
+            
+            if pos.find("left") > -1:
+                xc = (src_width - self.width)/2. + (src_width  * z)/2
+            elif pos.find("right") > -1:
+                xc = (src_width - self.width)/2. - (src_width  * z)/2 + self.width
+            else:
+                xc = src_width / 2.
+
+            xcenter = xc / float(src_width)
+            ycenter = yc / float(src_height)
+        else:
+            xcp,ycp = map(str.strip, pos.split(","))
+            if(xcp.find("%")>-1):
+                xcenter = eval(xcp.replace("%","")) / 100.
+            else:
+                xcenter = eval(xcp) / float(src_width)
+    
+            if(ycp.find("%")>-1):
+                ycenter = eval(ycp.replace("%","")) / 100.
+            else:
+                ycenter = eval(ycp) / float(src_height)
+    
+        return (z, xcenter, ycenter)
 
 ################################################################################
 class Background(Image):
@@ -380,47 +446,68 @@ class Audio(Element):
         self.track = track
         self.effects= effects
 
-
         if(self.track > 2):
             raise Exception("ERROR: Only 2 audio tracks supported at this time.  Fix this audio file track number!")
         if(self.track < 1):
             raise Exception("ERROR: Must specify positive and non-zero track number.  Fix this audio file track number!")
 
+        self.fadein  = 0
+        self.fadeout = 0
+
         for effect in self.effects:
             if not(effect.name in ["fadein","fadeout"]):
                        raise Exception("ERROR: %s unknown audio effect. 'fadein' and 'fadeout' are only valid effects")
-        self.filename_orig = self.filename
+            dur =  int(round(gst.SECOND * float(effect.param)))
+            exec("self."+effect.name+" = dur")
 
     def __str__(self):
-        x = "%s:%s" % (self.filename_orig, self.track)
+        x = "%s:%s" % (self.filename, self.track)
         fx = ":".join([ "%s:%s" % (y.name,y.param) for y in self.effects ])
         if(fx):
             x += ":" + fx
         return x
-        x = "%s:%s" % (self.filename_orig, self.track)
+        x = "%s:%s" % (self.filename, self.track)
 
     def initialize(self):
         self.duration = get_duration(self.filename)
 
-    def get_bin(self):
+    def get_bin(self, duration=None):
         self.gstbin = gst.Bin()
         elements = []
-        for name in [ "filesrc", "decodebin2", "audioconvert", ]:
+        for name in [ "filesrc", "decodebin2", "audioconvert", "capsfilter", "volume", ]:
             elements.append(gst.element_factory_make(name, name))
             exec("%s = elements[-1]" % name)
     
         filesrc.set_property("location",  self.filename)
         self.gstbin.add(*elements)
         filesrc.link(decodebin2)
+        audioconvert.link(capsfilter)
+        capsfilter.link(volume)
+        capsfilter.props.caps = self.config["audio_caps"]
+        
+        self.volume_controller = gst.Controller(volume, "volume")
+        self.volume_controller.set_interpolation_mode("volume", gst.INTERPOLATE_LINEAR)
+        if self.fadein:
+            self.volume_controller.set("volume", 0,    0.0)
+            self.volume_controller.set("volume", self.fadein, 1.0)
+        else:
+            self.volume_controller.set("volume", 0, 1.0)
+            
+        if self.fadeout:
+            self.volume_controller.set("volume", duration-self.fadeout, 1.0)
+            self.volume_controller.set("volume", duration,      0.0)
+        else:
+            self.volume_controller.set("volume", duration, 1.0)
+
         def on_pad(src_element, pad, data, sink_element):
             sinkpad = sink_element.get_compatible_pad(pad, pad.get_caps())
             pad.link(sinkpad)
 
         decodebin2.connect("new-decoded-pad", on_pad, audioconvert)
-        self.gstbin.add_pad(gst.GhostPad("src", audioconvert.get_pad("src")))
+        self.gstbin.add_pad(gst.GhostPad("src", volume.get_pad("src")))
         return self.gstbin
 
-
+    
     
 #        elif image[-1] == 'musictitle':
 #            types.append("musictitle")

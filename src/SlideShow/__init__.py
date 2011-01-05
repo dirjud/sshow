@@ -15,6 +15,7 @@ class Config(dict):
             bgfile       = "black",
 
             gui          = 0,
+            preview      = 0,
             debug        = 0, # 0-2
             pal          = 0,  
             copy         = 0,
@@ -167,6 +168,7 @@ class Config(dict):
 
         self.parser = parser = optparse.OptionParser()
         parser.add_option("--gui", dest="gui", default=None, action="store_true", help="Launch gui and use tool interactively")
+        parser.add_option("--preview", dest="preview", default=None, action="store_true", help="Preview the image")
         parser.add_option("-o", "--outdir",    dest="outdir", default=None, help="Directory where work directory, the final .vob, and dvdauthor .xml files will be written.  Default is to write in the directory where sshow was run.")
         parser.add_option("--themes",          dest="print_themes", action="store_true", default=False, help="print available themes")
         
@@ -592,9 +594,11 @@ def initialize_pipeline(pipeline, config):
     framerate_denom = 100
     height = config["dvd_height"]
     width = int(round(config["dvd_height"] * config["aspect_ratio_float"]))
-    config["caps"] = gst.Caps("video/x-raw-yuv,width=%d,height=%d,framerate=(fraction)%d/%d" % (width, height, framerate_numer, framerate_denom))
+    config["caps"] = gst.Caps("video/x-raw-yuv,width=%d,height=%d,framerate=(fraction)%d/%d,format=(fourcc)I420" % (width, height, framerate_numer, framerate_denom))
     config["width"]  = width
     config["height"] = height
+
+    config["audio_caps"] = gst.Caps("audio/x-raw-int, endianness=(int)1234, signed=(boolean)true, width=(int)16, depth=(int)16, rate=(int)44100")
 
     if config.has_key("output_size"):
 	# used user-set size, instead of defaults!
@@ -696,9 +700,6 @@ def get_video_composition(elements):
     priority = 1
     for element in elements:
         if isSlide(element):
-            src = gst.element_factory_make("gnlsource")
-            src.add(element.get_bin())
-
             dur = element.duration
 
             prev_transition = find_prev_transition(element)
@@ -712,6 +713,8 @@ def get_video_composition(elements):
             if(next_transition):
                 dur += next_transition.duration/2
 
+            src = gst.element_factory_make("gnlsource")
+            src.add(element.get_bin(dur))
             src.props.start          = start_time - prev_dur
             src.props.duration       = dur
             src.props.media_start    = 0
@@ -723,10 +726,10 @@ def get_video_composition(elements):
             start_time += element.duration
 
         elif element.__class__ == Element.Transition:
+            dur = element.duration
+
             op = gst.element_factory_make("gnloperation")
             op.add(element.get_bin())
-
-            dur = element.duration
             op.props.start          = start_time - dur/2
             op.props.duration       = dur
             op.props.media_start    = 0
@@ -744,13 +747,17 @@ def get_audio_composition(elements, video_info):
     done = False
     for element in elements:
         if element.__class__ == Element.Audio:
-            src = gst.element_factory_make("gnlsource")
-            src.add(element.get_bin())
-
             dur = element.duration
+
+            # pull the song back in time based on any fadein requests
+            start_time = max(0, start_time-element.fadein)
+
             if(start_time + dur > video_info["duration"]):
                 dur = video_info["duration"] - start_time
                 done = True
+
+            src = gst.element_factory_make("gnlsource")
+            src.add(element.get_bin(dur))
             src.props.start          = start_time
             src.props.duration       = dur
             src.props.media_start    = 0
@@ -779,7 +786,16 @@ def get_audio_composition(elements, video_info):
         comp.add(src)
         start_time += dur
         
-
+    # Add an audio mixer to mix any fades
+    op = gst.element_factory_make("gnloperation")
+    op.add(gst.element_factory_make("adder"))
+    op.props.start          = 0
+    op.props.duration       = start_time
+    op.props.media_start    = 0
+    op.props.media_duration = start_time
+    op.props.priority       = 0
+    comp.add(op)
+    
     return comp, dict(durtation=start_time)
 
 def get_encoder_backend(config):
@@ -810,7 +826,7 @@ def get_encoder_backend(config):
     sink      = gst.element_factory_make("filesink", "sink")
     sink.set_property("location", config["outdir"]+"/"+config["slideshow_name"]+".mp4")
     video_enc.props.bitrate = config["video_bitrate"] # * 1000
-    print "bitrate=", video_enc.props.bitrate
+    #print "bitrate=", video_enc.props.bitrate
 
     backend.add(video_enc, audio_enc, mux, sink)
     video_enc.link(mux)
@@ -842,8 +858,10 @@ def build(elements, config, progress):
     print "video_info", video_info
     print "audio_info", audio_info
 
-    backend = get_encoder_backend(config)
-    #backend = get_preview_backend(config)
+    if config["preview"]:
+        backend = get_preview_backend(config)
+    else:
+        backend = get_encoder_backend(config)
 
     pipeline = gst.Pipeline()
     pipeline.add(video_comp, audio_comp, backend)
@@ -883,7 +901,11 @@ def build(elements, config, progress):
 
     loop = gobject.MainLoop()
     context = loop.get_context()
+    pipeline.get_state() # block until state transition has finished
+    duration = pipeline.query_duration(gst.Format(gst.FORMAT_TIME))[0]
     while state["running"]:
         context.iteration(True)
-        
+        #position = backend.query_position(gst.Format(gst.FORMAT_TIME))[0]
+        #print position/float(gst.SECOND), duration/float(gst.SECOND)
+
     progress.overall_done()
