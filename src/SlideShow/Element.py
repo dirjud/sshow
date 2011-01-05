@@ -1,6 +1,6 @@
 import os, subprocess, hashlib, time, sys, gst
 import logging
-import KenBurns, Annotate, transition, SlideShow
+import KenBurns, Annotate, transition
 
 log = logging.getLogger(__name__)
 
@@ -47,37 +47,16 @@ def cmdif(src, outdir, extension, command):
     return dest
             
 
-## make both a slideshow_background file and a title_background file
 def get_dims(img_file):
     return map(int, cmd('identify -format "%w %h" '+img_file).split())
 
-def crop_img(imgfile, extension, config):
-    width,height = get_dims(imgfile)
-    img_ratio = 100 * width / height
-    #if [ "$do_autocrop_w" -eq 1 ]; then   
-    #        # autocrop background image width (width too large)
-    #        convert "${bg}" -filter $filtermethod \
-    # 			-resize "$sq_to_dvd_pixels" \
-    # 			-resize x"$dvd_height" \
-    #        			-gravity center \
-    # 			-crop "$dvd_width"x"$dvd_height"'+0!+0!' \
-    # 			-type TrueColorMatte -depth 8 \
-    # 			"$tmpdir"/slideshow_background.ppm
-    #elif [ "$do_autocrop_h" -eq 1 ]; then
-    #        # autocrop background image height (height too large)
-    #        convert "${bg}" -filter $filtermethod \
-    # 			-resize "$sq_to_dvd_pixels" \
-    # 			-resize "$dvd_width"x \
-    #        			-gravity center \
-    # 			-crop "$dvd_width"x"$dvd_height"'+0!+0!' \
-    # 			-type TrueColorMatte -depth 8 \
-    # 			"$tmpdir"/slideshow_background.ppm
-    #else
-            #don't autorop
-
-    convert = "convert "+imgfile+" -filter "+config["filtermethod"]+"	-resize "+config["sq_to_dvd_pixels"]+" -resize x"+str(config["dvd_height"])+" -bordercolor black -border "+str(config["dvd_width"])+"x240 -gravity center -crop "+str(config["dvd_width"])+"x"+str(config["dvd_height"])+"'+0!+0!' -type TrueColorMatte -depth 8 %s"
-    return cmdif(imgfile, config["workdir"], extension, convert)
-
+def get_duration(filename):
+    d = gst.parse_launch("filesrc location="+filename+" ! decodebin2 ! fakesink")
+    d.set_state(gst.STATE_PAUSED)
+    d.get_state() # blocks until state transition has finished
+    duration = d.query_duration(gst.Format(gst.FORMAT_TIME))[0]
+    d.set_state(gst.STATE_NULL)
+    return duration
 
 ################################################################################
 class Effect():
@@ -91,9 +70,14 @@ class Element():
     def __init__(self, location):
         self.location = location
 
-    def initialize(self, prev, next, config):
+    def initialize(self):
+        pass
+
+    def link(self, prev, next):
         self.next=next
         self.prev=prev
+
+    def set_config(self, config):
         self.config = config
 
     def isa(self, type1):
@@ -142,8 +126,6 @@ class Element():
         if self.next:
             self.next.prev = self.prev
 
-    def done(self):
-        pass
 
 def encode(x):
     return x.replace(":","\:")
@@ -179,9 +161,6 @@ class Image(Element):
     extensions = ['jpg', 'png', 'jpeg' ]
     def __init__(self, location, filename, extension, duration, subtitle, effects):
         Element.__init__(self, location)
-        if not(os.path.exists(filename)):
-            raise Exception("Image "+filename+" does not exist.")
-
         self.name      = os.path.basename(filename).replace("."+extension,"")
         self.filename  = filename
         self.extension = extension
@@ -191,6 +170,11 @@ class Image(Element):
         if(self.duration <= 0):
             self.duration = 5.0;
 
+    def initialize(self):
+        if not(os.path.exists(self.filename)):
+            raise Exception("Image "+filename+" does not exist.")
+        self.width, self.height = get_dims(self.filename)
+
     def __str__(self):
         x = "%s:%g:%s" % (encode(self.filename), self.duration, encode(self.subtitle))
         fx = ":".join([ "%s:%s" % (y.name,encode(y.param)) for y in self.effects ])
@@ -199,6 +183,46 @@ class Image(Element):
         return x
 
     def get_bin(self):
+        fx_names = [ x.name for x in self.effects ]
+        if("kenburns" in fx_names):
+            return self.get_kenburns_bin()
+        else:
+            return self.get_crop_bin()
+        
+    def get_crop_bin(self):
+        self.gstbin = gst.Bin()
+        elements = []
+        for name in [ "filesrc", "decodebin2", "imagefreeze", "ffmpegcolorspace", "kenburns", "capsfilter",  ]:
+            elements.append(gst.element_factory_make(name))
+            exec("%s = elements[-1]" % name)
+    
+        self.gstbin.add(*elements)
+        filesrc.link(decodebin2)
+        imagefreeze.link(ffmpegcolorspace)
+        ffmpegcolorspace.link(kenburns)
+        kenburns.link(capsfilter)
+
+        filesrc.props.location = self.filename
+        capsfilter.props.caps = self.config["caps"]
+        kenburns.props.zoom1 = 1.0
+        kenburns.props.xcenter1 = 0.5
+        kenburns.props.ycenter1 = 0.5
+        kenburns.props.zoom2 = 1.0
+        kenburns.props.xcenter2 = 0.5
+        kenburns.props.ycenter2 = 0.5
+        kenburns.props.duration = self.duration
+
+        def on_pad(src_element, pad, data, sink_element):
+            sinkpad = sink_element.get_compatible_pad(pad, pad.get_caps())
+            pad.link(sinkpad)
+
+        decodebin2.connect("new-decoded-pad", on_pad, imagefreeze)
+        self.gstbin.add_pad(gst.GhostPad("src", capsfilter.get_pad("src")))
+        return self.gstbin
+        
+
+    def get_kenburns_bin(self):
+
         self.gstbin = gst.Bin()
         elements = []
         for name in [ "filesrc", "decodebin2", "imagefreeze", "kenburns", "capsfilter", ]:
@@ -239,7 +263,6 @@ class Image(Element):
         return self.gstbin
         
 
-
 ################################################################################
 class Background(Image):
     names = ['background',]
@@ -262,17 +285,22 @@ class Background(Image):
         x = "%s:%g:%s:%s" % (self.name, self.duration/1000., self.subtitle, self.bg)
         return x
 
-    def create_slide(self, config):
-        self.extension="ppm"
+    def initialize(self):
+        self.extension="png"
         if self.bg == "":
             prev_bg = self.prev._find_background()
             self.filename = prev_bg.filename
             self.extension= prev_bg.extension
-        elif os.path.exists(self.bg): # if effect is a background file
-            self.filename = crop_img(self.bg, self.extension, config)
+            self.width = prev_bg.width
+            self.height= prev_bg.height
+
+        #elif os.path.exists(self.bg): # if effect is a background file
+        #    self.filename = crop_img(self.bg, self.extension, self.config)
         else: ## use plain black background with no picture
-            convert = "convert -size "+str(config["dvd_width"])+'x'+str(config["dvd_height"])+" xc:"+self.bg+" -type TrueColorMatte -depth 8 %s"
-            self.filename = cmdif(None, config["workdir"], self.extension, convert)
+            self.width = self.config["width"]
+            self.height= self.config["height"]
+            convert = "convert -size "+str(self.width)+'x'+str(self.height)+" xc:"+self.bg+" -type TrueColorMatte -depth 8 %s"
+            self.filename = cmdif(None, self.config["workdir"], self.extension, convert)
 
 
 ################################################################################
@@ -291,26 +319,29 @@ class Title(Image):
     def __str__(self):
         return "%s:%g:%s:%s" % (self.name, self.duration/1000., self.title1, self.title2)
 
-    def create_slide(self, config):
-        self.extension = "ppm"
+    def initialize(self):
+        self.extension = "png"
         bg = self._find_background()
-        bg.create_slide(config)
-        fsize = config["title_font_size"]
-        fcolor = config["title_font_color"]
+        fsize = self.config["title_font_size"]
+        fcolor = self.config["title_font_color"]
 
-	if config["low_quality"] or config["vcd"] or config["output_format"] in ['flv', 'swf', 'mp4', 'mpg']:
-            fsize = fsize * config["dvd_height"] / 480
+	if self.config["low_quality"] or self.config["vcd"] or self.config["output_format"] in ['flv', 'swf', 'mp4', 'mpg']:
+            fsize = fsize * self.config["dvd_height"] / 480
             
 	## if background is black & font color is black, change font to white
         if bg.bg == "black" and fcolor == 'black':
             fcolor='white'
+        
+        self.width = self.config["width"]*1
+        self.height= self.config["height"]*1
 
-        convert = ("convert -size %dx%d xc:transparent -fill '%s' -pointsize %s -gravity Center -font %s -annotate 0 '%s' -type TrueColorMatte -depth 9 miff:- | composite -compose src-over -type TrueColorMatte -depth 8 - %s" % (config["dvd_width"], config["dvd_height"], fcolor, fsize, config["title_font"], self.title1.replace("'","'\"'\"'"), bg.filename)).replace("%", "%%") + " %s"
-        self.filename = cmdif(bg.filename, config["workdir"], self.extension, convert)
+        convert = ("convert -size %dx%d xc:transparent -fill '%s' -pointsize %s -gravity Center -font %s -annotate 0 '%s' -type TrueColorMatte -depth 9 miff:- | composite -compose src-over -type TrueColorMatte -depth 8 - %s" % (self.width, self.height, fcolor, fsize, self.config["title_font"], self.title1.replace("'","'\"'\"'"), bg.filename)).replace("%", "%%") + " %s"
+        
+        self.filename = cmdif(bg.filename, self.config["workdir"], self.extension, convert)
 
 ################################################################################
 class Transition(Element):
-    names   = ['fadein', 'fadeout', 'crossfade']
+    names   = ['fadein', 'fadeout', 'crossfade', 'wipe']
 
     def __init__(self, location, name, duration):
         Element.__init__(self, location)
@@ -319,18 +350,19 @@ class Transition(Element):
         if duration <= 0:
             raise Exception("Transition duration must be a positive number.")
         self.name     = name
-        self.duration = float(duration)
+        self.duration = duration
 
         if name in ['fadein', 'fadeout', 'crossfade']:
             self.get_transition_bin = transition.get_crossfade_bin
+        if name in ["wipe"]:
+            self.get_transition_bin = transition.get_smpte_bin
 
     def __str__(self):
         return "%s:%g" % (self.name, self.duration)
 
-    def get_gnloperation(self):
-        self.bin, self.controller = self.get_transition_bin(self.duration)
-        self.op = transition.get_gnloperation(self.bin)
-        return self.op
+    def get_bin(self):
+        self.gstbin, self.controller = self.get_transition_bin(self.duration)
+        return self.gstbin
 
 
 ################################################################################
@@ -367,10 +399,8 @@ class Audio(Element):
         return x
         x = "%s:%s" % (self.filename_orig, self.track)
 
-
-    def initialize(self, prev, next, config):
-        Element.initialize(self, prev, next, config)
-        self.duration = SlideShow.get_duration(self.filename)
+    def initialize(self):
+        self.duration = get_duration(self.filename)
 
     def get_bin(self):
         self.gstbin = gst.Bin()
@@ -391,21 +421,6 @@ class Audio(Element):
         return self.gstbin
 
 
-class Silence(Audio):
-    def __init__(self, location, duration, track=1):
-        Element.__init__(self, location)
-        self.duration = duration
-        self.track = track
-
-    def initialize(self, prev, next, config):
-        Element.initialize(self, prev, next, config)
-        self.extension = "raw"
-
-        sox = "sox -t raw -e signed -2 -c 2 -r "+str(config["audio_sample_rate"])+" /dev/zero -2 -s -c 2 -r "+str(config["audio_sample_rate"])+ " %s trim 0 "+ str(self.duration/1000.)
-        self.filename = cmdif(None, config["workdir"], self.extension, sox)
-
-    def apply_fx(self, config):
-        pass
     
 #        elif image[-1] == 'musictitle':
 #            types.append("musictitle")

@@ -244,13 +244,12 @@ gst_kenburns_transform (GstBaseTransform * trans, GstBuffer * in,
 
   GST_OBJECT_LOCK (kb);
   GstClockTime ts = GST_BUFFER_TIMESTAMP(in);
-  GstClockTime duration = kb->duration * 1e9;
-  if(ts >= duration) ts = duration;
+  if(ts >= kb->duration) ts = kb->duration;
 
-  x0 = kb->x0start + (kb->x0end-kb->x0start) * ts / duration;
-  y0 = kb->y0start + (kb->y0end-kb->y0start) * ts / duration;
-  x1 = kb->x1start + (kb->x1end-kb->x1start) * ts / duration;
-  y1 = kb->y1start + (kb->y1end-kb->y1start) * ts / duration;
+  x0 = kb->x0start + (kb->x0end-kb->x0start) * ts / kb->duration;
+  y0 = kb->y0start + (kb->y0end-kb->y0start) * ts / kb->duration;
+  x1 = kb->x1start + (kb->x1end-kb->x1start) * ts / kb->duration;
+  y1 = kb->y1start + (kb->y1end-kb->y1start) * ts / kb->duration;
 
   scale_and_crop_i420(kb, src, dst, x0, y0, x1, y1);
 
@@ -292,7 +291,7 @@ gst_kenburns_set_property (GObject * object, guint prop_id,
       update_start_stop_params(kb);
       break;
     case PROP_DURATION:
-      kb->duration = g_value_get_double(value);
+      kb->duration = g_value_get_uint64(value);
       update_start_stop_params(kb);
       break;
     default:
@@ -327,7 +326,7 @@ gst_kenburns_get_property (GObject * object, guint prop_id, GValue * value,
       g_value_set_double(value, kb->ycenter2);
       break;
     case PROP_DURATION:
-      g_value_set_double(value, kb->duration);
+      g_value_set_uint64(value, kb->duration);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -395,8 +394,8 @@ gst_kenburns_class_init (GstKenburnsClass * klass)
 			   -1.0, 2.0, 0.5,
 			   GST_PARAM_CONTROLLABLE | G_PARAM_READWRITE));
   g_object_class_install_property (gobject_class, PROP_DURATION,
-      g_param_spec_double ("duration", "Duration of Effect in seconds", "Duration of effect in seconds",
-			   0, 1e20, 5.0,
+      g_param_spec_uint64 ("duration", "Duration of Effect in nanoseconds", "Duration of effect in nanoseconds",
+			   1, 0xFFFFFFFFFFFFFFFFull, 5000000000ull,
 			   GST_PARAM_CONTROLLABLE | G_PARAM_READWRITE));
 
   trans_class->set_caps = GST_DEBUG_FUNCPTR (gst_kenburns_set_caps);
@@ -415,7 +414,7 @@ gst_kenburns_init (GstKenburns * kb, GstKenburnsClass * klass)
   kb->zoom1 = 0.9;
   kb->zoom2 = 0.8;
   kb->xcenter1 = kb->ycenter1 = kb->xcenter2 = kb->ycenter2 = 0.5;
-  kb->duration = 5.0;
+  kb->duration = 5000000000ull;
 
   gst_base_transform_set_passthrough (GST_BASE_TRANSFORM (kb), FALSE);
 }

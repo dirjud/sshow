@@ -593,6 +593,8 @@ def initialize_pipeline(pipeline, config):
     height = config["dvd_height"]
     width = int(round(config["dvd_height"] * config["aspect_ratio_float"]))
     config["caps"] = gst.Caps("video/x-raw-yuv,width=%d,height=%d,framerate=(fraction)%d/%d" % (width, height, framerate_numer, framerate_denom))
+    config["width"]  = width
+    config["height"] = height
 
     if config.has_key("output_size"):
 	# used user-set size, instead of defaults!
@@ -634,8 +636,12 @@ def initialize_pipeline(pipeline, config):
             next_element = pipeline[pos+1]
         except:
             next_element = None
+
+        element.link(prev_element, next_element)
+        element.set_config(config)
+
         try:
-            element.initialize(prev_element, next_element, config)
+            element.initialize()
         except Exception, e:
             raise
             raise Exception("%s: %s" % (element.location, str(e)))
@@ -683,26 +689,30 @@ def initialize_pipeline(pipeline, config):
     print "Video Duration:", video_duration
     return dict(audio_duration=audio_duration, video_duration=video_duration, video_element_count=video_element_count)
 
-def get_duration(filename):
-    d = gst.parse_launch("filesrc location="+filename+" ! decodebin2 ! fakesink")
-    d.set_state(gst.STATE_PAUSED)
-    d.get_state() # blocks until state transition has finished
-    duration = d.query_duration(gst.Format(gst.FORMAT_TIME))[0]
-    d.set_state(gst.STATE_NULL)
-    return duration
-
 def get_video_composition(elements):
     comp = gst.element_factory_make("gnlcomposition")
 
     start_time = 0
     priority = 1
     for element in elements:
-        if element.__class__ == Element.Image:
+        if isSlide(element):
             src = gst.element_factory_make("gnlsource")
             src.add(element.get_bin())
 
             dur = element.duration
-            src.props.start          = start_time
+
+            prev_transition = find_prev_transition(element)
+            if(prev_transition):
+                dur += prev_transition.duration/2
+                prev_dur = prev_transition.duration/2
+            else:
+                prev_dur = 0
+
+            next_transition = find_next_transition(element)
+            if(next_transition):
+                dur += next_transition.duration/2
+
+            src.props.start          = start_time - prev_dur
             src.props.duration       = dur
             src.props.media_start    = 0
             src.props.media_duration = dur
@@ -710,8 +720,20 @@ def get_video_composition(elements):
             comp.add(src)
 
             priority   += 1
-            start_time += dur
+            start_time += element.duration
 
+        elif element.__class__ == Element.Transition:
+            op = gst.element_factory_make("gnloperation")
+            op.add(element.get_bin())
+
+            dur = element.duration
+            op.props.start          = start_time - dur/2
+            op.props.duration       = dur
+            op.props.media_start    = 0
+            op.props.media_duration = dur
+            op.props.priority        = 0
+            comp.add(op)
+            
     return comp, dict(duration=start_time)
 
 def get_audio_composition(elements, video_info):
@@ -740,6 +762,23 @@ def get_audio_composition(elements, video_info):
             start_time += dur
             if done:
                 break
+
+    # fill any remaining time with silence
+    if(start_time < video_info["duration"]):
+        dur = video_info["duration"] - start_time
+        src = gst.element_factory_make("gnlsource")
+        silence = gst.element_factory_make("audiotestsrc")
+        silence.props.wave=4 # silence
+        silence.props.volume=0.0
+        src.add(silence)
+        src.props.start          = start_time
+        src.props.duration       = dur
+        src.props.media_start    = 0
+        src.props.media_duration = dur
+        src.props.priority       = priority
+        comp.add(src)
+        start_time += dur
+        
 
     return comp, dict(durtation=start_time)
 
@@ -781,6 +820,21 @@ def get_encoder_backend(config):
     backend.add_pad(gst.GhostPad("audio_sink", audio_enc.get_pad("sink")))
     return backend
 
+def get_preview_backend(config):
+
+    backend = gst.Bin()
+    video_queue = gst.element_factory_make("queue")
+    audio_queue = gst.element_factory_make("queue")
+    video_sink  = gst.element_factory_make("autovideosink")
+    audio_sink  = gst.element_factory_make("autoaudiosink")
+
+    backend.add(video_queue, audio_queue, video_sink, audio_sink)
+    video_queue.link(video_sink)
+    audio_queue.link(audio_sink)
+    backend.add_pad(gst.GhostPad("video_sink", video_queue.get_pad("sink")))
+    backend.add_pad(gst.GhostPad("audio_sink", audio_queue.get_pad("sink")))
+    return backend
+
 def build(elements, config, progress):
     video_comp, video_info = get_video_composition(elements)
     audio_comp, audio_info = get_audio_composition(elements, video_info)
@@ -789,15 +843,18 @@ def build(elements, config, progress):
     print "audio_info", audio_info
 
     backend = get_encoder_backend(config)
+    #backend = get_preview_backend(config)
 
     pipeline = gst.Pipeline()
     pipeline.add(video_comp, audio_comp, backend)
 
     def on_pad(comp, pad, backend):
         capspad = backend.get_compatible_pad(pad, pad.get_caps())
-        print "caps, ", str(capspad), comp.get_name(), str(pad.get_caps()) 
-        print "backcaps", str(backend.get_pad("audio_sink").get_caps())
-        pad.link(capspad)
+        if capspad:
+            pad.link(capspad)
+        else:
+            print "pad caps", str(pad.get_caps())
+            raise Exception("Cannot find capabilible pads")
     video_comp.connect("pad-added", on_pad, backend)
     audio_comp.connect("pad-added", on_pad, backend)
 
@@ -830,66 +887,3 @@ def build(elements, config, progress):
         context.iteration(True)
         
     progress.overall_done()
-    
-#    video_duration = total_frames * 1000 / config["framerate"]
-#    
-#    log.info("Audio duration = %s" % (audio_duration,))
-#    log.info("Video duration = %s" % (video_duration,))
-#    
-#    ############################################################################
-#    # AUDIO section...
-#    ##########################################################################
-#    if(audio_duration < video_duration):
-#        silence = Element.Silence("Auto-Inserted", video_duration-audio_duration)
-#        silence.initialize(None, None, config)
-#        audio_pipeline.append(silence)
-#        log.info("Created Silence " + str(silence.duration))
-#        audio_duration += silence.duration
-#    
-#    audio_raw = config["workdir"]+"/audio.raw"
-#    audio_wav = config["workdir"]+"/audio.wav"
-#    audio_dur = 0
-#    reached_end = False
-#    cmd("rm -f " + audio_raw)
-#    for element in audio_pipeline:
-#        if(audio_dur + element.duration > video_duration):
-#            log.info("Trimming audio")
-#            element.trim(video_duration - audio_dur, config)
-#            reached_end = True
-#    
-#        element.apply_fx(config)
-#        audio_dur += element.duration
-#        cmd("cat %s >> %s" % (element.filename, audio_raw))
-#    
-#        if(reached_end):
-#            break
-#    audio_duration = audio_dur
-#    log.info("Audio duration = %s" % (audio_duration,))
-#    log.info("Video duration = %s" % (video_duration,))
-#    
-#    # now raw audio file should match in length
-#        
-#    cmd("sox -2 -e signed -c 2 -r %s %s %s" % (config["audio_sample_rate"], audio_raw, audio_wav))
-#    
-#    if config["ac3"] and config["output_format"] == 'mpeg2':
-#        log.info("Creating ac3 audio...")
-#        cmd("rm -f "+config["workdir"]+"/audio.ac3")
-#        cmd("ffmpeg -i "+audio_wav+" -vn -ab "+str(config["audio_bitrate"])+"k -acodec ac3 -vol 100 -ar "+str(config["audio_sample_rate"])+" -ac 6 "+config["workdir"]+"/audio.ac3 >> "+config["ffmpeg_out"]+" 2>&1")
-#    else:
-#        raise Exception("Not yet supported")
-#    
-#    ## check to make sure the output files exist before running mplex:
-#    if not(os.path.exists(config["workdir"]+"/video.mpg")):
-#        raise Exception("ERROR: no output video.mpg file found! This usually happens when ffmpeg screws up something or one image is messed up and the resulting video can't be created")
-#    	
-#    log.info("Multiplexing audio and video...")
-#    
-#    ## now multiplex the audio and video:
-#    ## -M option is important:  it generates a "single" output file instead of "single-segement" ones
-#    ## if you don't use -M, the dvdauthor command will fail!
-#    ## total mplex bitrate = 128kBit audio + 1500 kBit video + a little overhead
-#    
-#    #else  # default mpeg2 video for dvd/vcd
-#    if config["ac3"]:
-#        cmd("mplex -V "+config["video_buffer"]+" "+config["ignore_seq_end"]+" -f "+str(config["mplex_type"])+" -o "+config["outdir"]+"/"+config["slideshow_name"]+".vob "+config["workdir"]+"/video.mpg "+config["workdir"]+"/audio.ac3 >> "+config["ffmpeg_out"]+" 2>&1")
-#    

@@ -36,7 +36,7 @@ def get_crossfade_bin(duration):
     controller = gst.Controller(alpha, "alpha")
     controller.set_interpolation_mode("alpha", gst.INTERPOLATE_LINEAR)
     controller.set("alpha", 0, 0.0)
-    controller.set("alpha", int(duration * gst.SECOND), 1.0)
+    controller.set("alpha", duration, 1.0)
 
     return bin, controller
 
@@ -44,19 +44,13 @@ def get_smpte_bin(duration, type=1):
     bin = get_alpha_transition(element = "smptealpha")
     alpha = bin.get_by_name("alpha2")
 
-    controller = gst.Controller(alpha, "alpha")
-    controller.set_interpolation_mode("alpha", gst.INTERPOLATE_LINEAR)
+    controller = gst.Controller(alpha, "position")
+    controller.set_interpolation_mode("position", gst.INTERPOLATE_LINEAR)
     controller.set("position", 0, 1.0)
-    controller.set("position", int(duration * gst.SECOND), 0.0)
+    controller.set("position", duration, 0.0)
 
     return bin, controller
 
-def get_gnloperation(element):
-    # setup the gnloperation 
-    op = gst.element_factory_make("gnloperation")
-    op.add(element)
-    op.set_property("priority", 0)
-    return op
 
 
 

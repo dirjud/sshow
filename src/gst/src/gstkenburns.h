@@ -64,7 +64,7 @@ struct _GstKenburns {
   gdouble xcenter1, ycenter1, xcenter2, ycenter2; 
 
   // the duration in seconds over which the transition is to occur.
-  gdouble duration;
+  GstClockTime duration;
   
   gdouble x0start, y0start, x1start, y1start;
   gdouble x0end,   y0end,   x1end,   y1end;
