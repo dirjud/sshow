@@ -1,4 +1,4 @@
-import Element
+import Element, gst
 import logging, re
 log = logging.getLogger(__name__)
 
@@ -62,8 +62,8 @@ class DVDSlideshow():
             try:
                 pipeline.append(DVDSlideshow.parse_line(line, config, location))
             except Exception, e:
-                raise
-                #raise Exception("%s: %s" % (location, str(e)))
+                #raise
+                raise Exception("%s: %s" % (location, str(e)))
         f.close()
 
     @staticmethod
@@ -175,15 +175,15 @@ class DVDSlideshow():
     @staticmethod
     def parse_duration(duration, allow_zero=False):
         if duration == "":
-            dur_ms = 0
+            dur = 0
         else:
             try:
-                dur_ms = int(round(float(duration)*1000))
+                dur = float(duration)
             except:
                 raise Exception("Cannot convert duration '%s' to float" % duration)
-        if (dur_ms==0) and not(allow_zero):
+        if (dur==0) and not(allow_zero):
             raise Exception("Error: duration of zero requested.")
-        return dur_ms
+        return int(round(dur * gst.SECOND))
 
     @staticmethod
     def getBackground(location, name, fields):

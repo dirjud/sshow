@@ -1,6 +1,6 @@
-import os, subprocess, hashlib, time, sys
+import os, subprocess, hashlib, time, sys, gst
 import logging
-import KenBurns, Annotate
+import KenBurns, Annotate, transition, SlideShow
 
 log = logging.getLogger(__name__)
 
@@ -188,59 +188,57 @@ class Image(Element):
         self.duration  = duration
         self.subtitle  = subtitle
         self.effects   = effects
-        self.filename_orig = self.filename
-        if(self.duration == 0):
-            self.duration = 5000;
+        if(self.duration <= 0):
+            self.duration = 5.0;
 
     def __str__(self):
-        x = "%s:%g:%s" % (encode(self.filename_orig), self.duration/1000., encode(self.subtitle))
+        x = "%s:%g:%s" % (encode(self.filename), self.duration, encode(self.subtitle))
         fx = ":".join([ "%s:%s" % (y.name,encode(y.param)) for y in self.effects ])
         if(fx):
             x += ":" + fx
         return x
 
-    def update_filename(self, filename):
-        self.filename_orig = filename
-        self.filename = filename
-        self.extension = filename.split(".")[-1]
+    def get_bin(self):
+        self.gstbin = gst.Bin()
+        elements = []
+        for name in [ "filesrc", "decodebin2", "imagefreeze", "kenburns", "capsfilter", ]:
+            elements.append(gst.element_factory_make(name, name))
+            exec("%s = elements[-1]" % name)
+    
+        filesrc.set_property("location",  self.filename)
+        kenburns.set_property("duration", self.duration)
+        capsfilter.set_property("caps", self.config["caps"])
+    
+        self.gstbin.add(*elements)
+        filesrc.link(decodebin2)
+        imagefreeze.link(kenburns)
+        kenburns.link(capsfilter)
 
-    def get_images(self, N, config, progress):
-        fx = [e.name for e in self.effects]
-        if("kenburns" in fx):
-            param = self.effects[fx.index("kenburns")].param
-            imgs = KenBurns.kenburns(config, param, self.filename, N, progress)
-        else:
-            progress.task_start(N, self.name)
-            self.create_slide(config)
-            progress.task_update(N)
-            progress.task_done()
-            imgs = [ (self.filename, N), ]
+        fx_names = [ x.name for x in self.effects ]
+        if("kenburns" in fx_names):
+            i = fx_names.index("kenburns")
+            param = self.effects[i].param
+            zstart, pstart, zend, pend = map(str.strip, param.split(";"))
+            kenburns.props.zoom1 = float(zstart.replace("%",""))/100.
+            kenburns.props.zoom2 = float(zend.replace("%",""))/100.
+            x1,y1 = pstart.split(",")
+            x2,y2 = pend.split(",")
+            kenburns.props.xcenter1 = float(x1.replace("%",""))/100.
+            kenburns.props.ycenter1 = float(y1.replace("%",""))/100.
+            kenburns.props.xcenter2 = float(x2.replace("%",""))/100.
+            kenburns.props.ycenter2 = float(y2.replace("%",""))/100.
+            
+        
 
-        for fx in self.effects:
-            if fx.name == "annotate":
-                imgs = Annotate.annotate(self.config, imgs, fx.param, progress)
+        def on_pad(src_element, pad, data, sink_element):
+            sinkpad = sink_element.get_compatible_pad(pad, pad.get_caps())
+            pad.link(sinkpad)
 
-        return imgs
+        decodebin2.connect("new-decoded-pad", on_pad, imagefreeze)
+        self.gstbin.add_pad(gst.GhostPad("src", capsfilter.get_pad("src")))
+        return self.gstbin
+        
 
-    def done(self):
-        if not(self.config["nocleanup"]):
-            KenBurns.cleanup(self.config, self.filename)
-            Annotate.cleanup(self.config, self.filename)
-
-    def create_slide(self, config):
-        # create_slide $file $outfile $transparent
-        # does autocropping and compositing over background if required
-        bg = self._find_background()
-
-        postprocess = ""
-	# postprocessing options:
-	# add sepia, black_and_white, old, etc...
-	if config["image_postprocess"] == 'shadow' and config["border"] > 0:
-            postprocess='( +clone  -background black  -shadow 80x3+5+5 ) +swap -background none -mosaic'
-
-        convert = ("convert -size "+str(config["frame_width"])+"x"+str(config["frame_height"])+" "+self.filename+" -filter "+config["filtermethod"]+" -resize "+config["sq_to_dvd_pixels"]+ " -resize "+str(config["frame_width"])+"x"+str(config["frame_height"]) + " -type TrueColorMatte -depth 8 "+ config["sharpen"] +" "+postprocess+" miff:- | composite -compose src-over -gravity center -type TrueColorMatte -depth 8 - "+bg.filename).replace("%","%%") + " %s"
-        self.extension = "ppm"
-        self.filename  = cmdif(self.filename, config["workdir"], self.extension, convert)
 
 ################################################################################
 class Background(Image):
@@ -312,7 +310,7 @@ class Title(Image):
 
 ################################################################################
 class Transition(Element):
-    names = ['fadein', 'fadeout', 'crossfade', 'wipe' ]
+    names   = ['fadein', 'fadeout', 'crossfade']
 
     def __init__(self, location, name, duration):
         Element.__init__(self, location)
@@ -320,45 +318,19 @@ class Transition(Element):
             raise Exception("Unknown transition %s" % name)
         if duration <= 0:
             raise Exception("Transition duration must be a positive number.")
-        self.name = name
-        self.duration = duration
+        self.name     = name
+        self.duration = float(duration)
+
+        if name in ['fadein', 'fadeout', 'crossfade']:
+            self.get_transition_bin = transition.get_crossfade_bin
 
     def __str__(self):
-        return "%s:%g" % (self.name, self.duration/1000.)
+        return "%s:%g" % (self.name, self.duration)
 
-    def compose(self, imgs0, imgs1, config, progress):
-        N = int(config["framerate"] * self.duration / 1000.)
-
-        if len(imgs0) == 0:
-            imgs0 = [ self._find_background().filename, N ]
-        if len(imgs1) == 0:
-            raise Exception("Internal Error: Length of imgs1 sequence is zero")
-
-        # unwrap each sequence into a list of files
-        unwrap0 = []
-        unwrap1 = []
-
-        for img in imgs0:
-            for i in range(img[1]):
-                unwrap0.append(img[0])
-        for img in imgs1:
-            for i in range(img[1]):
-                unwrap1.append(img[0])
-
-        if len(unwrap0) != N or len(unwrap1) != N:
-            raise Exception("Internal Error Generating Transition. Number of overlapping frames in transition is not equal to %d." % N)
-
-        imgs = []
-        progress.task_start(N, self.name)
-        for i, (img0, img1) in enumerate(zip(unwrap0, unwrap1)):
-            progress.task_update(i)
-            imgs.append((eval("self."+self.name+"(img0, img1, i, N, config)"), 1))
-        progress.task_done()
-        return imgs
-    
-    def crossfade(self, img0, img1, i, N, config):
-        compose = ("composite -blend %s %s %s" % (i*100/N, img1, img0,)) + " %s"
-        return cmdif([img0,img1], config["workdir"], "ppm", compose)
+    def get_gnloperation(self):
+        self.bin, self.controller = self.get_transition_bin(self.duration)
+        self.op = transition.get_gnloperation(self.bin)
+        return self.op
 
 
 ################################################################################
@@ -376,12 +348,6 @@ class Audio(Element):
         self.track = track
         self.effects= effects
 
-        if self.extension == 'ogg':
-            self.check_installed("oggdec", "The vorbis-tools package must be installed to use .ogg audio files.")
-        elif self.extension == 'mp3':
-            self.check_installed("lame", "The lame package must be installed to use .mp3 audio files.")
-        elif self.extension in ['m4a','aac' ]:
-            self.check_installed("faad", "The faad package must be installed to use .m4a or .aac audio files.")
 
         if(self.track > 2):
             raise Exception("ERROR: Only 2 audio tracks supported at this time.  Fix this audio file track number!")
@@ -402,97 +368,28 @@ class Audio(Element):
         x = "%s:%s" % (self.filename_orig, self.track)
 
 
-    def check_installed(self, prog, msg):
-        it=cmd("which "+prog+" 2> /dev/null")
-        if not(it):
-            raise Exception("ERROR: '"+prog+"' not found in path." + msg)
-
     def initialize(self, prev, next, config):
         Element.initialize(self, prev, next, config)
-        self.transcode(config)
-        self.stats()
+        self.duration = SlideShow.get_duration(self.filename)
 
-        dur = self.duration / 1000.
-        fxlen = 0
-        for effect in self.effects:
-            if effect.param > dur:
-                raise Exception("%s time of %s seconds is longer than audio clip duration of %s seconds" % (effect.name, effect.param, dur,))
-            fxlen += effect.param
-        if(fxlen > dur):
-            raise Exception("fadein and fadeout total duration is %s seconds, which is longer than the audio clip of %s seconds." % (fxlen, dur,))
+    def get_bin(self):
+        self.gstbin = gst.Bin()
+        elements = []
+        for name in [ "filesrc", "decodebin2", "audioconvert", ]:
+            elements.append(gst.element_factory_make(name, name))
+            exec("%s = elements[-1]" % name)
+    
+        filesrc.set_property("location",  self.filename)
+        self.gstbin.add(*elements)
+        filesrc.link(decodebin2)
+        def on_pad(src_element, pad, data, sink_element):
+            sinkpad = sink_element.get_compatible_pad(pad, pad.get_caps())
+            pad.link(sinkpad)
 
-    def stats(self):
-        log.info("Getting info on %s" % self.filename)
-        txt = cmd("sox "+self.filename+" -n stat 2>&1")
-        if txt.find("FAIL") >= 0:
-            raise Exception("sox is not compiled with support for %s. '%s'" % (self.extension, txt))
-        for line in txt.split("\n"):
-            key, val = map(str.strip, line.split(":", 1))
-            self.stats = {}
-            if(key.lower().startswith("length")):
-                self.duration = int(float(val)*1000)
-            self.stats[key] = val
-            log.debug(" %s : %s" % (key, val,))
+        decodebin2.connect("new-decoded-pad", on_pad, audioconvert)
+        self.gstbin.add_pad(gst.GhostPad("src", audioconvert.get_pad("src")))
+        return self.gstbin
 
-    def transcode(self, config):
-        if self.extension == "mp3":
-            self.extension = "wav"
-            ffmpeg = "ffmpeg -i "+self.filename+" -y -vn -ab "+str(config["audio_bitrate"])+"k -f wav -ar "+str(config["audio_sample_rate"])+" -ac 2 %s >> "+config["ffmpeg_out"]+" 2>&1"
-            self.filename = cmdif(self.filename, config["workdir"], self.extension, ffmpeg)
-        elif self.extension == "ogg":
-            self.extension = "wav"
-            oggdec = "oggdec --quiet -o %s "+self.filename
-            self.filename = cmdif(self.filename, config["workdir"], self.extension, oggdec)
-        elif self.extension == "wav":
-            pass # no need to do anything
-#  		elif [ "$suffix" == "m4a" ] || [ "$suffix" == "aac" ] ; then
-#  #			myecho "[dvd-slideshow] decoding mp4 audio... be patient."
-#  			if [ "$audiosmp" -eq 1 ] ; then
-#  				faad -o "$tmpdir/audio$track"_"$audio_index_padded.wav" "$file" &
-#  			else
-#  				faad -o "$tmpdir/audio$track"_"$audio_index_padded.wav" "$file" 
-#  			fi
-#  		elif [ "$file" == 'silence' ]; then
-#  			if [ "$audiosmp" -eq 1 ] ; then
-#  				sox -t raw -s -2 -c 2 -r $audio_sample_rate /dev/zero -t wav -c 2 -r $audio_sample_rate "$tmpdir/audio$track"_"$audio_index_padded.wav" trim 0 1 &
-#  			else
-#  				sox -t raw -s -2 -c 2 -r $audio_sample_rate /dev/zero -t wav -c 2 -r $audio_sample_rate "$tmpdir/audio$track"_"$audio_index_padded.wav" trim 0 1
-#  			fi
-        else:
-            raise Exception("Unknown audio file format.")
-
-
-    def trim(self, duration, config):
-
-        if self.extension == "raw":
-            header = "-2 -e signed -c 2 -r " + config["audio_sample_rate"]
-        else:
-            header = ""
-        sox = "sox %s %s %s %%s trim 0 %s" % (header, self.filename, header, duration/1000.)
-        self.filename = cmdif(self.filename, config["workdir"], self.extension, sox)
-        self.duration = duration
-
-    def apply_fx(self, config):
-
-        # I found some "popping" in the audio for some tracks.
-        # it turns out that this is caused by audio going
-        # too low or too high and getting clipped.
-        # reducing the volume a little should help.
-        volume="0.95"
-        sox = "sox -v %s %s -2 -e signed -c 2 -r %s %%s" % (volume, self.filename, config["audio_sample_rate"])
-        if(self.effects):
-            fx = [ x.name for x in self.effects]
-            if("fadein" in fx):
-                sox += " fade t %s" % self.effects[fx.index("fadein")].param
-            else:
-                sox += " fade t 0"
-
-            if("fadeout" in fx):
-                sox += " %s %s" % (self.duration/1000., self.effects[fx.index("fadeout")].param)
-
-        self.filename = cmdif(self.filename, config["workdir"], self.extension, sox)
-        self.extension = "raw"
-        
 
 class Silence(Audio):
     def __init__(self, location, duration, track=1):
