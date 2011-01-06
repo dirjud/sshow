@@ -13,6 +13,9 @@ if config["gui"]:
     app = SlideShow.pygtk.SlideShowApp(config)
     gtk.main()
 else:
+    import logging
+    logging.basicConfig(level=logging.WARN)
+
     if not(config["input_txtfile"]):
         raise Exception("No input file specified")
 

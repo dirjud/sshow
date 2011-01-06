@@ -1,6 +1,6 @@
 import os, subprocess, hashlib, time, sys, gst
 import logging
-import Annotate, transition
+import transition, Annotate
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +46,19 @@ def cmdif(src, outdir, extension, command):
     cmd(command % dest)
     return dest
             
+def get_color(x):
+    a = r = g = b = 0xFF
+    
+    if type(x) is str and x[0] == "#":
+        r = int(x[1:3],16)
+        g = int(x[3:5],16)
+        b = int(x[5:7],16)
+    else:
+        raise Exception("Unknown color '%s'" % (str(x)))
+    
+    return (a << 24) | (r << 16) | (g << 8) | b
+    #import struct
+    #return int(struct.pack(">BBBB", a,r,g,b))
 
 def get_dims(img_file):
     return map(int, cmd('identify -format "%w %h" '+img_file).split())
@@ -185,58 +198,20 @@ class Image(Element):
     def get_bin(self, duration=None):
         if duration is None:
             duration = self.duration
-
         fx_names = [ x.name for x in self.effects ]
-        if("kenburns" in fx_names or True):
-            return self.get_kenburns_bin(duration)
-        else:
-            return self.get_crop_bin(duration)
-        
-    def get_crop_bin(self, duration):
 
         self.gstbin = gst.Bin()
         elements = []
-        for name in [ "filesrc", "decodebin2", "ffmpegcolorspace", "kenburns", "capsfilter", "imagefreeze",   ]:
+        for name in [ "filesrc", "decodebin2", "ffmpegcolorspace", "imagefreeze", "kenburns", "capsfilter",  ]:
             elements.append(gst.element_factory_make(name))
             exec("%s = elements[-1]" % name)
-        caps2 = gst.element_factory_make("capsfilter")
-        elements.append(caps2)
     
-        self.gstbin.add(*elements)
-        filesrc.link(decodebin2)
-        ffmpegcolorspace.link(kenburns)
-        kenburns.link(capsfilter)
-        capsfilter.link(imagefreeze)
-        imagefreeze.link(caps2)
-        
-        filesrc.props.location  = self.filename
-        capsfilter.props.caps   = self.config["caps"]
-        caps2.props.caps        = self.config["caps"]
-        kenburns.props.zoom1    = 1.0
-        kenburns.props.xcenter1 = 0.5
-        kenburns.props.ycenter1 = 0.5
-        kenburns.props.zoom2    = 1.0
-        kenburns.props.xcenter2 = 0.5
-        kenburns.props.ycenter2 = 0.5
-        kenburns.props.duration = duration
-
-        def on_pad(src_element, pad, data, sink_element):
-            sinkpad = sink_element.get_compatible_pad(pad, pad.get_caps())
-            pad.link(sinkpad)
-
-        decodebin2.connect("new-decoded-pad", on_pad, ffmpegcolorspace)
-        self.gstbin.add_pad(gst.GhostPad("src", caps2.get_pad("src")))
-        return self.gstbin
-        
-
-    def get_kenburns_bin(self, duration):
-
-        self.gstbin = gst.Bin()
-        elements = []
-        for name in [ "filesrc", "decodebin2", "ffmpegcolorspace", "imagefreeze", "kenburns", "capsfilter", ]:
-            elements.append(gst.element_factory_make(name, name))
-            exec("%s = elements[-1]" % name)
-    
+        annotate = None
+        if "annotate" in fx_names:
+            annotate = gst.element_factory_make("textoverlay")
+            elements.append(annotate)
+            Annotate.parse_annotate_params(self, annotate, self.effects[fx_names.index("annotate")].param, duration)
+            
         filesrc.set_property("location",  self.filename)
         kenburns.set_property("duration", duration)
         capsfilter.set_property("caps", self.config["caps"])
@@ -246,8 +221,9 @@ class Image(Element):
         ffmpegcolorspace.link(imagefreeze)
         imagefreeze.link(kenburns)
         kenburns.link(capsfilter)
+        if annotate:
+            capsfilter.link(annotate)
 
-        fx_names = [ x.name for x in self.effects ]
         if("kenburns" in fx_names):
             i = fx_names.index("kenburns")
             param = self.effects[i].param
@@ -268,15 +244,14 @@ class Image(Element):
             kenburns.props.xcenter2 = 0.5
             kenburns.props.ycenter2 = 0.5
 
-        
-
         def on_pad(src_element, pad, data, sink_element):
             sinkpad = sink_element.get_compatible_pad(pad, pad.get_caps())
             pad.link(sinkpad)
 
         decodebin2.connect("new-decoded-pad", on_pad, ffmpegcolorspace)
-        self.gstbin.add_pad(gst.GhostPad("src", capsfilter.get_pad("src")))
+        self.gstbin.add_pad(gst.GhostPad("src", elements[-1].get_pad("src")))
         return self.gstbin
+
 
     def parse_kb_params(self, zoom, pos):
         img_ratio = self.width / float(self.height)

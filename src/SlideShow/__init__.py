@@ -59,12 +59,14 @@ class Config(dict):
             bottomtitle_text_location_y=155,
 
             # annotate
-            annotate_pointsize = "8%",
+            annotate_size = "8%",
             annotate_font      = "Helvetica-Bold",
-            annotate_fill      = "#FFFFFF",
-            annotate_stroke    = "#000000",
-            annotate_position  = "50%,90%",
-            annotate_undercolor= None,
+            annotate_color     = "#FFFFFF",
+            annotate_halign    = "center",
+            annotate_valign    = "baseline",
+            annotate_vertical  = 0,
+            annotate_justification = "center",
+            annotate_fontstyle = "BOLD",
             
             theme='default',
             themedir='/opt/sshow/themes',  # LSB/FHS compliant.  see: http://www.pathname.com/fhs/pub/fhs-2.3.html#OPTADDONAPPLICATIONSOFTWAREPACKAGES
@@ -137,12 +139,13 @@ class Config(dict):
         "bottomtitle_bar_height"     ,
         "bottomtitle_text_location_x",
         "bottomtitle_text_location_y",
-        "annotate_pointsize"         ,
+        "annotate_size"              ,
         "annotate_font"              ,
-        "annotate_fill"              ,
-        "annotate_stroke"            ,
+        "annotate_fontstyle"         ,
+        "annotate_color"             ,
         "annotate_position"          ,
-        "annotate_undercolor"        ,
+        "annotate_vertical"          ,
+        "annotate_justification"     ,
         "border"                     ,
         "slideshow_image_filter"     ,
         "sharpen"                    ,
@@ -268,27 +271,6 @@ def cmd(x):
     return p.stdout.read()[:-1] # chop off final carriage return
 
 def check_system(config):
-    ## Check for required programs
-    progver=cmd("mplex 2>&1 | grep version | awk '{ print $4 }'")
-    if progver: log.debug("Found mjpegtools version" + progver)
-    it=cmd("which ppmtoy4m 2> /dev/null")
-    if not(it): # no ppmtoy4m
-        raise Exception("ERROR:  no mjpegtools found for audio processing.  You need to download and install mjpegtools. http://mjpegtools.sourceforge.net")
-    
-    if cmd("ppmtoy4m -S 420mpeg2 xxxxx 2>&1 | grep xxxxx"):
-        log.debug("Using mjpegtools subsampling -S 420mpeg2")
-        config["subsample"] ='420mpeg2'
-    else:
-        log.debug("Using mjpegtools subsampling -S 420_mpeg2")
-        config["subsample"] ='420_mpeg2'
-    	
-    #checkforprog sox
-    progver=cmd("sox -h 2>&1 | head -n 1 | awk '{ print $3 }'")
-    log.debug("Found sox version " + progver)
-    it=cmd("which sox 2> /dev/null")
-    if not(it): # no sox
-        raise Exception("ERROR:  no sox found for audio processing. You need to download and install sox. http://sox.sourceforge.net")
-    
     #checkforprog convert
     progver=cmd("convert -help | head -n 1 | awk '{ print $3 }'")
     log.debug("Found ImageMagick version " + progver)
@@ -296,30 +278,12 @@ def check_system(config):
     if not(it): # no convert
         raise Exception("ERROR:  no ImageMagick found for audio processing. You need to download and install ImageMagick. http://ImageMagick.sourceforge.net")
     
-    #checkforprog dvdauthor
-    progver=cmd("dvdauthor -h 2>&1 | head -n 1 | awk '{ print $3 }'")
-    log.debug("Found dvdauthor version " + progver)
-    it=cmd("which dvdauthor 2> /dev/null")
-    if not(it): # no dvdauthor
-        raise Exception("ERROR:  no dvdauthor found for audio processing. You need to download and install dvdauthor. http://dvdauthor.sourceforge.net")
-    
-    # ffmpeg
-    it=cmd("which ffmpeg 2> /dev/null")
-    if not(it):
-        # no ffmpeg!  use mp2 audio instead:
-        log.warn("No ffmpeg found for AC3 audio encoding. Using MP2 audio instead. MP2 audio is less compatible with DVD player hardware. http://ffmpeg.sourceforge.net")
-        config["ac3"] = 0
-        config["mpeg_encoder"] = 'mpeg2enc'
-    else:
-        # found ffmpeg
-        progver = cmd("ffmpeg -version 2>&1").split(",",1)[0]
-        log.debug("Found "+ progver)
-        ## check to see if we have mpeg2video output option:
-        it=cmd("ffmpeg -f mpeg2video 2>&1 | grep 'Unknown input or output format: mpeg2video'")
-        if it:
-            log.warn("ffmpeg is not compiled with the mpeg2video option required for making dvds!  Using mpeg2enc instead.")
-            config["mpeg_encoder"]='mpeg2enc'
-
+    # #checkforprog dvdauthor
+    # progver=cmd("dvdauthor -h 2>&1 | head -n 1 | awk '{ print $3 }'")
+    # log.debug("Found dvdauthor version " + progver)
+    # it=cmd("which dvdauthor 2> /dev/null")
+    # if not(it): # no dvdauthor
+    #     raise Exception("ERROR:  no dvdauthor found for audio processing. You need to download and install dvdauthor. http://dvdauthor.sourceforge.net")
 
 def read_pipeline(filename, config):
     if not(os.path.exists(filename)):
