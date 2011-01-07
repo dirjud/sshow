@@ -762,6 +762,34 @@ def get_audio_composition(elements, video_info):
     
     return comp, dict(durtation=start_time)
 
+def get_frontend(elements, config):
+    video_comp, video_info = get_video_composition(elements)
+    audio_comp, audio_info = get_audio_composition(elements, video_info)
+    print "video_info", video_info
+    print "audio_info", audio_info
+
+    video_caps = gst.element_factory_make("capsfilter")
+    audio_caps = gst.element_factory_make("capsfilter")
+    video_caps.props.caps = gst.Caps(config["caps"])
+    audio_caps.props.caps = gst.Caps(config["audio_caps"])
+
+    frontend = gst.Bin()
+    frontend.add(video_comp, audio_comp, video_caps, audio_caps)
+
+    def on_pad(comp, pad, capsfilter):
+        capspad = capsfilter.get_compatible_pad(pad, pad.get_caps())
+        if capspad:
+            pad.link(capspad)
+        else:
+            print "pad caps", str(pad.get_caps())
+            raise Exception("Cannot find capabilible pads")
+    video_comp.connect("pad-added", on_pad, video_caps)
+    audio_comp.connect("pad-added", on_pad, audio_caps)
+    frontend.add_pad(gst.GhostPad("video_src", video_caps.get_pad("src")))
+    frontend.add_pad(gst.GhostPad("audio_src", audio_caps.get_pad("src")))
+    return frontend
+
+
 def get_encoder_backend(config):
 
 #    if config["mpeg_encoder"] == 'ffmpeg':
@@ -815,61 +843,51 @@ def get_preview_backend(config):
     backend.add_pad(gst.GhostPad("audio_sink", audio_queue.get_pad("sink")))
     return backend
 
-def build(elements, config, progress):
-    video_comp, video_info = get_video_composition(elements)
-    audio_comp, audio_info = get_audio_composition(elements, video_info)
-
-    print "video_info", video_info
-    print "audio_info", audio_info
-
-    if config["preview"]:
-        backend = get_preview_backend(config)
-    else:
-        backend = get_encoder_backend(config)
-
+def get_gst_pipeline(frontend, backend):
     pipeline = gst.Pipeline()
-    pipeline.add(video_comp, audio_comp, backend)
+    pipeline.add(frontend, backend)
+    frontend.get_pad("video_src").link(backend.get_pad("video_sink"))
+    frontend.get_pad("audio_src").link(backend.get_pad("audio_sink"))
+    return pipeline
 
-    def on_pad(comp, pad, backend):
-        capspad = backend.get_compatible_pad(pad, pad.get_caps())
-        if capspad:
-            pad.link(capspad)
-        else:
-            print "pad caps", str(pad.get_caps())
-            raise Exception("Cannot find capabilible pads")
-    video_comp.connect("pad-added", on_pad, backend)
-    audio_comp.connect("pad-added", on_pad, backend)
-
-    #slide_count = 0
-    #for element in pipeline:
-    #    if isSlide(element): slide_count += 1
+def start(pipeline, progress):
     progress.overall_start(1)
-
-    state = { "running": True }
+    progress.state = "PLAYING"
     bus = pipeline.get_bus()
     bus.add_signal_watch()
-    bus.enable_sync_message_emission()
-    def on_message(bus, message, state):
+    def on_message(bus, message, progress):
         t = message.type
 	if t == gst.MESSAGE_EOS:
             print "EOS"
-            pipeline.set_state(gst.STATE_NULL)
-            state["running"] = False
+            progress.state = "EOS"
+            progress.overall_done()
 	elif t == gst.MESSAGE_ERROR:
-            pipeline.set_state(gst.STATE_NULL)
             err, debug = message.parse_error()
-            state["running"] = False
-	    raise Exception("Error: %s %s" % (err, debug))
-    bus.connect("message", on_message, state)
+            progress.state = "ERROR"
+            progress.error = err, debug
+            progress.overall_done()
+    bus.connect("message", on_message, progress)
     pipeline.set_state(gst.STATE_PLAYING)
+    pipeline.get_state() # wait for it to transition
 
-    loop = gobject.MainLoop()
-    context = loop.get_context()
-    pipeline.get_state() # block until state transition has finished
-    duration = pipeline.query_duration(gst.Format(gst.FORMAT_TIME))[0]
-    while state["running"]:
-        context.iteration(True)
-        #position = backend.query_position(gst.Format(gst.FORMAT_TIME))[0]
-        #print position/float(gst.SECOND), duration/float(gst.SECOND)
+def stop(pipeline):
+    pipeline.set_state(gst.STATE_NULL)
+    pipeline.get_state() # wait for it to finish
 
-    progress.overall_done()
+
+def get_config_to_frontend(input_txtfile=None):
+    config = Config()
+    config.parse_argv()
+    check_system(config)
+        
+    if input_txtfile: # override 
+        config["input_txtfile"] = input_txtfile
+
+    if not(config.has_key("input_txtfile")):
+        return config, None, None
+        
+    elements = read_pipeline(config["input_txtfile"], config)
+    initialize_pipeline(elements, config)
+    frontend = get_frontend(elements, config)
+
+    return config, elements, frontend

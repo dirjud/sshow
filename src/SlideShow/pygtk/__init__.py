@@ -2,7 +2,7 @@ import os, logging, threading, time
 import SlideShow, Settings
 import pygtk
 pygtk.require("2.0")
-import gtk, gobject
+import gtk, gobject, gst
 
 log = logging.getLogger(__name__)
 
@@ -335,4 +335,3 @@ class SlideShowApp(object):
     def element_updated(self):
         self.pipelist[self.selected_path] = [ self.element, self.element ]
         self.dirty = True
-

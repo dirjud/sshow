@@ -69,7 +69,6 @@ def parse_annotate_params(self, element, params, duration):
                 cont.set_interpolation_mode(prop, gst.INTERPOLATE_LINEAR)
                 cont.set(prop, 0,   start)
                 cont.set(prop, dur, stop)
-                print start, stop, dur, prop
 
             if props.has_key("xpos2"):
                 create_pos_controller(self.anno_controller, "xpos", element.props.xpos, float(props["xpos2"]), duration)
