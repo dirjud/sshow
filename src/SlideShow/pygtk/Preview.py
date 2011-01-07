@@ -135,7 +135,6 @@ class Preview(object):
         self.update_gui_state()
 
     def seek(self, position):
-        print "seeking to ", position
         pos = max(0, min(self.duration, position))
         self.pipeline.seek_simple(gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, int(round(pos * gst.SECOND)))
         gobject.idle_add(self.update_gui_state)

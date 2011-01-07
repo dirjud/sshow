@@ -15,7 +15,7 @@ libgstkenburns_la_SOURCES = gstkenburns.c gstkenburns.h
 
 # compiler and linker flags used to compile this plugin, set in configure.ac
 libgstkenburns_la_CFLAGS = $(GST_CFLAGS) 
-libgstkenburns_la_LIBADD = $(GST_LIBS) -lgstvideo-0.10
+libgstkenburns_la_LIBADD = $(GST_LIBS) -lgstvideo-0.10 -lm
 libgstkenburns_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS)
 libgstkenburns_la_LIBTOOLFLAGS = --tag=disable-static
 

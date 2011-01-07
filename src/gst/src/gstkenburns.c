@@ -49,6 +49,7 @@
 #include <gst/gst.h>
 #include <gst/controller/gstcontroller.h>
 #include <gst/video/video.h>
+#include <math.h>
 
 /* GstKenburns properties */
 enum
@@ -61,7 +62,9 @@ enum
   PROP_XCENTER_END,
   PROP_YCENTER_END,
   PROP_DURATION,
-      /* FILL ME */
+  PROP_INTERP_METHOD,
+  PROP_INTERP_PARAM,
+  /* FILL ME */
 };
 
 GST_DEBUG_CATEGORY_STATIC (gst_kenburns_debug);
@@ -237,7 +240,7 @@ gst_kenburns_transform (GstBaseTransform * trans, GstBuffer * in,
   GstKenburns *kb = GST_KENBURNS (trans);
   guint8 *dst;
   const guint8 *src;
-  double x0, y0, x1, y1;
+  double x0, y0, x1, y1, dist;
 
   src = GST_BUFFER_DATA (in);
   dst = GST_BUFFER_DATA (out);
@@ -246,10 +249,26 @@ gst_kenburns_transform (GstBaseTransform * trans, GstBuffer * in,
   GstClockTime ts = GST_BUFFER_TIMESTAMP(in);
   if(ts >= kb->duration) ts = kb->duration;
 
-  x0 = kb->x0start + (kb->x0end-kb->x0start) * ts / kb->duration;
-  y0 = kb->y0start + (kb->y0end-kb->y0start) * ts / kb->duration;
-  x1 = kb->x1start + (kb->x1end-kb->x1start) * ts / kb->duration;
-  y1 = kb->y1start + (kb->y1end-kb->y1start) * ts / kb->duration;
+  if(kb->duration == 0) {
+    dist = 0;
+  } else {
+    dist = (double) ts / kb->duration; // linearly interpolate
+  }
+
+  if(kb->interp_method == 1) {
+    if(dist < 0.5) {
+      dist =     pow(2*dist,     kb->interp_param) / 2.0;
+    } else {
+      dist = 1 - pow(2*(1-dist), kb->interp_param) / 2.0;
+    }
+  }
+  if(dist > 1.0) dist = 1.0;
+  if(dist < 0.0) dist = 0.0;
+
+  x0 = kb->x0start + (kb->x0end-kb->x0start) * dist;
+  y0 = kb->y0start + (kb->y0end-kb->y0start) * dist;
+  x1 = kb->x1start + (kb->x1end-kb->x1start) * dist;
+  y1 = kb->y1start + (kb->y1end-kb->y1start) * dist;
 
   scale_and_crop_i420(kb, src, dst, x0, y0, x1, y1);
 
@@ -294,6 +313,12 @@ gst_kenburns_set_property (GObject * object, guint prop_id,
       kb->duration = g_value_get_uint64(value);
       update_start_stop_params(kb);
       break;
+    case PROP_INTERP_METHOD:
+      kb->interp_method = g_value_get_int(value);
+      break;
+    case PROP_INTERP_PARAM:
+      kb->interp_param = g_value_get_double(value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -327,6 +352,12 @@ gst_kenburns_get_property (GObject * object, guint prop_id, GValue * value,
       break;
     case PROP_DURATION:
       g_value_set_uint64(value, kb->duration);
+      break;
+    case PROP_INTERP_METHOD:
+      g_value_set_int(value, kb->interp_method);
+      break;
+    case PROP_INTERP_PARAM:
+      g_value_set_double(value, kb->interp_param);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -415,6 +446,8 @@ gst_kenburns_init (GstKenburns * kb, GstKenburnsClass * klass)
   kb->zoom2 = 0.8;
   kb->xcenter1 = kb->ycenter1 = kb->xcenter2 = kb->ycenter2 = 0.5;
   kb->duration = 5000000000ull;
+  kb->interp_method=1;
+  kb->interp_param=1.75;
 
   gst_base_transform_set_passthrough (GST_BASE_TRANSFORM (kb), FALSE);
 }

@@ -68,6 +68,9 @@ struct _GstKenburns {
   
   gdouble x0start, y0start, x1start, y1start;
   gdouble x0end,   y0end,   x1end,   y1end;
+
+  gint interp_method;
+  gdouble interp_param;
 };
 
 struct _GstKenburnsClass {
