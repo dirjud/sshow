@@ -25,6 +25,8 @@ class Config(dict):
             ac3          = 1,
             widescreen   = 0,
             border       = 0,  
+            width        = 640,
+            height       = 480,
             sharpen      = '',
             subtitle_type="dvd",	# or, use empty for default.
             font_dirs    = [ "/usr/share/fonts/","/usr/X11R6/lib/X11/fonts/","/usr/local/share/fonts/"],
@@ -832,15 +834,17 @@ def get_preview_backend(config):
 
     backend = gst.Bin()
     video_queue = gst.element_factory_make("queue")
+    audio_volume = gst.element_factory_make("volume","volume")
     audio_queue = gst.element_factory_make("queue")
     video_sink  = gst.element_factory_make("autovideosink")
     audio_sink  = gst.element_factory_make("autoaudiosink")
 
-    backend.add(video_queue, audio_queue, video_sink, audio_sink)
+    backend.add(video_queue, audio_volume, audio_queue, video_sink, audio_sink)
     video_queue.link(video_sink)
+    audio_volume.link(audio_queue)
     audio_queue.link(audio_sink)
     backend.add_pad(gst.GhostPad("video_sink", video_queue.get_pad("sink")))
-    backend.add_pad(gst.GhostPad("audio_sink", audio_queue.get_pad("sink")))
+    backend.add_pad(gst.GhostPad("audio_sink", audio_volume.get_pad("sink")))
     return backend
 
 def get_gst_pipeline(frontend, backend):

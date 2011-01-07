@@ -12,7 +12,7 @@ class Preview(object):
         self.top.connect("key_press_event", self.on_key_press)
 
         self.buttons = []
-        for name in ["first", "previous", "play", "next", "last", ]:
+        for name in ["first", "previous", "play", "next", "last", "fullscreen", "volume" ]:
             button = self.builder.get_object("button_"+name)
             button.connect("clicked", eval("self.on_"+name+"_clicked"))
             exec("self."+name+"_button = button")
@@ -29,7 +29,6 @@ class Preview(object):
     def set_size(self, width, height):
         self.preview_window.set_size_request(width, height)
 
-
     def init(self):
         self.EOS      = False
         self.duration = None
@@ -39,6 +38,8 @@ class Preview(object):
         print key
         if(key in ["space",]):
             self.on_play_clicked()
+        elif(key.lower() == "f"):
+            self.on_fullscreen_clicked()
         else:
             return True
         return False
@@ -55,16 +56,25 @@ class Preview(object):
         else:
             print position, self.slider.get_value()
 
+    def on_fullscreen_clicked(self, *args):
+        self.preview_window.fullscreen()
+
+    def on_volume_clicked(self, *args):
+        print args
+
     def on_first_clicked(self, *args):
         self.EOS = False
         self.seek(0)
 
     def on_previous_clicked(self, *args):
         self.EOS = False
-        pos = self.pipeline.query_position(gst.FORMAT_TIME)[0]/float(gst.SECOND)
+        pos = self.query_position()
         self.seek(max(0,pos-10.0))
 
     def on_play_clicked(self, *args):
+        if not(self.pipeline):
+            return
+
         state = self.get_state()
         if(state == gst.STATE_PLAYING):
             self.pause()
@@ -76,7 +86,7 @@ class Preview(object):
             self.play()
 
     def on_next_clicked(self, *args):
-        pos = self.pipeline.query_position(gst.FORMAT_TIME)[0]/float(gst.SECOND)
+        pos = self.query_position()
         self.seek(min(self.duration, pos+10.0))
 
     def on_last_clicked(self, *args):
@@ -169,8 +179,11 @@ class Preview(object):
             self.play_button.get_child().set_from_stock(gtk.STOCK_MEDIA_PLAY, gtk.ICON_SIZE_BUTTON)
         
         if self.duration == None:
-            self.duration = self.pipeline.query_duration(gst.FORMAT_TIME)[0]/float(gst.SECOND) - 1.0/self.config["framerate"]/2
-            self.slider.set_range(0,self.duration)
+            try:
+                self.duration = self.pipeline.query_duration(gst.FORMAT_TIME)[0]/float(gst.SECOND) - 1.0/self.config["framerate"]/2
+                self.slider.set_range(0,self.duration)
+            except gst.QueryError:
+                log.warn("Can't query stream duration")
 
         self.update_time(self.query_position(), self.duration)
         
@@ -185,7 +198,11 @@ class Preview(object):
 
     def query_position(self):
         if self.pipeline:
-            return self.pipeline.query_position(gst.FORMAT_TIME)[0]/float(gst.SECOND)
+            try:
+                return self.pipeline.query_position(gst.FORMAT_TIME)[0]/float(gst.SECOND)
+            except gst.QueryError:
+                log.warn("Failed querying current position")
+                return 0
         else:
             return 0
 
@@ -197,6 +214,8 @@ class Preview(object):
 
 
     def update_time(self, pos, duration):
+        if not(duration):
+            duration = 0;
         self.preview_status.set_text("%s/%s" % (self.fmt_dur(pos), self.fmt_dur(duration),))
         self.slider.set_value(pos)
 
@@ -229,11 +248,10 @@ class PreviewApp(object):
 
         appbox = self.builder.get_object("appbox")
         window.show()
-        
-       
         self.preview = Preview()
         
         appbox.pack_start(self.preview.get_top())
+        self.preview.get_top().grab_focus()
 
         gobject.idle_add(self.on_init)
         #window.set_default_size(config["width"], config["height"])
@@ -254,12 +272,31 @@ class PreviewApp(object):
         gtk.main_quit()
         
     def on_open(self, *args):
-        print args
+        dlg = gtk.FileChooserDialog(
+            title="Open", parent=self.window, 
+            action=gtk.FILE_CHOOSER_ACTION_OPEN, 
+            buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL,
+                     gtk.STOCK_OPEN, gtk.RESPONSE_ACCEPT,),
+            backend=None)
+
+        for pat,name in [("*.txt","*.txt"), ("*","All Files"), ]:
+            filt = gtk.FileFilter()
+            filt.add_pattern(pat)
+            filt.set_name(name)
+            dlg.add_filter(filt)
+        #dlg.select-multiple = False
+
+        response = dlg.run()
+        filename=None
+        if(response == gtk.RESPONSE_ACCEPT):
+            self.input_txtfile = dlg.get_filename()
+            self.load(self.input_txtfile)
+            gobject.idle_add(self.preview.play)
+        dlg.destroy()
 
     def on_refresh(self, *args):
         pos = self.preview.query_position()
         state = self.preview.get_state()
-        print "pos=",pos
         self.preview.pause()
         self.load(self.input_txtfile)
         if state == gst.STATE_PLAYING:
