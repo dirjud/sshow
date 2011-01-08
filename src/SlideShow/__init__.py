@@ -9,7 +9,7 @@ def cmd(x):
     p = subprocess.Popen(x, shell=True, stdout=subprocess.PIPE)
     return p.stdout.read()[:-1] # chop off final carriage return
 
-def check_system(config):
+def check_system():
     #checkforprog convert
     progver=cmd("convert -help | head -n 1 | awk '{ print $3 }'")
     log.debug("Found ImageMagick version " + progver)

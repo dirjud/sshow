@@ -71,6 +71,9 @@ def get_duration(filename):
     d.set_state(gst.STATE_NULL)
     return duration
 
+def dur2flt(dur):
+    return dur / float(gst.SECOND)
+
 ################################################################################
 class Effect():
     def __init__(self, name, param):
@@ -189,7 +192,7 @@ class Image(Element):
         self.width, self.height = get_dims(self.filename)
 
     def __str__(self):
-        x = "%s:%g:%s" % (encode(self.filename), self.duration, encode(self.subtitle))
+        x = "%s:%g:%s" % (encode(self.filename), dur2flt(self.duration), encode(self.subtitle))
         fx = ":".join([ "%s:%s" % (y.name,encode(y.param)) for y in self.effects ])
         if(fx):
             x += ":" + fx
@@ -323,7 +326,7 @@ class Background(Image):
              raise Exception("Unknown background specified. Must be a file or color")
 
     def __str__(self):
-        x = "%s:%g:%s:%s" % (self.name, self.duration/1000., self.subtitle, self.bg)
+        x = "%s:%g:%s:%s" % (self.name, dur2flt(self.duration), self.subtitle, self.bg)
         return x
 
     def initialize(self):
@@ -358,7 +361,7 @@ class Title(Image):
             raise Exception("No title text found.")
 
     def __str__(self):
-        return "%s:%g:%s:%s" % (self.name, self.duration/1000., self.title1, self.title2)
+        return "%s:%g:%s:%s" % (self.name, dur2flt(self.duration), self.title1, self.title2)
 
     def initialize(self):
         self.extension = "png"
@@ -399,7 +402,7 @@ class Transition(Element):
             self.get_transition_bin = transition.get_smpte_bin
 
     def __str__(self):
-        return "%s:%g" % (self.name, self.duration)
+        return "%s:%g" % (self.name, dur2flt(self.duration))
 
     def get_bin(self):
         self.gstbin, self.controller = self.get_transition_bin(self.config, self.duration)

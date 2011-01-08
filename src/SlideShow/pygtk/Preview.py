@@ -24,8 +24,8 @@ class Preview(object):
         self.pipeline = None
         self.backend  = None
         self.config   = None
-        self.init()
-    
+        gobject.idle_add(self.update_gui_state)
+
     def set_size(self, width, height):
         self.preview_window.set_size_request(width, height)
 
@@ -154,6 +154,7 @@ class Preview(object):
         self.update_gui_state()
 
     def update_gui_state(self):
+        print "update_gui_state"
         if not(self.pipeline):
             self.play_button.get_child().set_from_stock(gtk.STOCK_MEDIA_PLAY, gtk.ICON_SIZE_BUTTON)
             for button in self.buttons:

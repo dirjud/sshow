@@ -323,13 +323,13 @@ class ImageSettings(Settings):
 
     def on_filename(self, *args):
         filename = self.filename.get_text()
-        if(filename != self.element.filename_orig):
+        if(filename != self.element.filename):
             if os.path.exists(filename):
                 self.element.update_filename(filename)
                 self.on_paint()
                 self.element_updated()
             else:
-                self.filename.set_text(self.element.filename_orig)
+                self.filename.set_text(self.element.filename)
 
     @staticmethod
     def get_filename(parent):
@@ -355,7 +355,7 @@ class ImageSettings(Settings):
             self.on_paint()
         
     def sync_from_element_to_gui(self):
-        self.filename.set_text(self.element.filename_orig)
+        self.filename.set_text(self.element.filename)
         self.duration.set_text(str(self.element.duration/1000.))
         self.subtitle.set_text(self.element.subtitle)
         self.fxstore.clear()
