@@ -1,0 +1,40 @@
+#!/usr/bin/env python
+import SlideShow, sys
+
+if "--gui" in sys.argv or "--preview" in sys.argv:
+
+    import SlideShow.pygtk
+    import pygtk
+    pygtk.require("2.0")
+    import gtk
+    if "--gui" in sys.argv:
+        app = SlideShow.pygtk.SlideShowApp()
+    else:
+        import SlideShow.pygtk.Preview
+        app = SlideShow.pygtk.Preview.PreviewApp()
+    
+    gtk.gdk.threads_init()
+    gtk.main()
+
+else:
+    import gobject
+    import logging
+    logging.basicConfig(level=logging.WARN)
+
+    config, elements, frontend = SlideShow.get_config_to_frontend()
+
+    if frontend is None:
+        raise Exception("No input file specified")
+        
+    backend  = SlideShow.get_encoder_backend(config)
+    pipeline = SlideShow.get_gst_pipeline(frontend, backend)
+        
+    progress = SlideShow.Progress()
+    SlideShow.start(pipeline, progress)
+        
+    loop = gobject.MainLoop()
+    context = loop.get_context()
+    while progress.state == "PLAYING":
+        context.iteration(True)
+        
+    Slideshow.stop(pipeline)

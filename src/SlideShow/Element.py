@@ -402,7 +402,7 @@ class Transition(Element):
         return "%s:%g" % (self.name, self.duration)
 
     def get_bin(self):
-        self.gstbin, self.controller = self.get_transition_bin(self.duration)
+        self.gstbin, self.controller = self.get_transition_bin(self.config, self.duration)
         return self.gstbin
 
 
@@ -449,16 +449,16 @@ class Audio(Element):
     def get_bin(self, duration=None):
         self.gstbin = gst.Bin()
         elements = []
-        for name in [ "filesrc", "decodebin2", "audioconvert", "capsfilter", "volume", ]:
+        for name in [ "filesrc", "decodebin2", "audioconvert", "volume", "capsfilter",  ]:
             elements.append(gst.element_factory_make(name, name))
             exec("%s = elements[-1]" % name)
     
+        capsfilter.props.caps = self.config["audio_caps"]
         filesrc.set_property("location",  self.filename)
         self.gstbin.add(*elements)
         filesrc.link(decodebin2)
-        audioconvert.link(capsfilter)
-        capsfilter.link(volume)
-        capsfilter.props.caps = self.config["audio_caps"]
+        audioconvert.link(volume)
+        volume.link(capsfilter)
         
         self.volume_controller = gst.Controller(volume, "volume")
         self.volume_controller.set_interpolation_mode("volume", gst.INTERPOLATE_LINEAR)
@@ -479,7 +479,7 @@ class Audio(Element):
             pad.link(sinkpad)
 
         decodebin2.connect("new-decoded-pad", on_pad, audioconvert)
-        self.gstbin.add_pad(gst.GhostPad("src", volume.get_pad("src")))
+        self.gstbin.add_pad(gst.GhostPad("src", capsfilter.get_pad("src")))
         return self.gstbin
 
     

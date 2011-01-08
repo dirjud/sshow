@@ -1,6 +1,6 @@
 import gst
 
-def get_alpha_transition(element="alpha"):
+def get_alpha_transition(config, element="alpha"):
     """Returns a bin that performs a transition between two input pads
     based on adding an alpha channel. You can specify the element of
     the second channel. Currently supported are "alpha" and
@@ -15,22 +15,25 @@ def get_alpha_transition(element="alpha"):
     alpha2 = gst.element_factory_make(element,  "alpha2")
     mixer  = gst.element_factory_make("videomixer")
     color  = gst.element_factory_make("ffmpegcolorspace")
+    caps   = gst.element_factory_make("capsfilter")
+    caps.props.caps = gst.Caps(config["caps"])
 
-    bin.add(alpha1, alpha2, mixer, color)
+    bin.add(alpha1, alpha2, mixer, color, caps)
     alpha1.link(mixer)
     alpha2.link(mixer)
     mixer.link(color)
+    color.link(caps)
 
     bin.add_pad(gst.GhostPad("sink1", alpha1.get_pad("sink")))
     bin.add_pad(gst.GhostPad("sink2", alpha2.get_pad("sink")))
-    bin.add_pad(gst.GhostPad("src",   color.get_pad("src")))
+    bin.add_pad(gst.GhostPad("src",   caps.get_pad("src")))
 
     # return the controller otherwise it will go out of scope and get
     # deleted before it is even applied
     return bin
 
-def get_crossfade_bin(duration):
-    bin = get_alpha_transition(element = "alpha")
+def get_crossfade_bin(config, duration):
+    bin = get_alpha_transition(config, element = "alpha")
     alpha = bin.get_by_name("alpha2")
 
     controller = gst.Controller(alpha, "alpha")
@@ -40,8 +43,8 @@ def get_crossfade_bin(duration):
 
     return bin, controller
 
-def get_smpte_bin(duration, type=1):
-    bin = get_alpha_transition(element = "smptealpha")
+def get_smpte_bin(duration, config, type=1):
+    bin = get_alpha_transition(config, element = "smptealpha")
     alpha = bin.get_by_name("alpha2")
 
     controller = gst.Controller(alpha, "position")

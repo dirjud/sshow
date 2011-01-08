@@ -14,12 +14,6 @@ def pkgconfig(*packages, **kw):
             kw[k] = list(set(v))
     return kw
 
-module1 = Extension('SlideShow.Img',
-                    define_macros = [('MAJOR_VERSION', '1'),
-                                     ('MINOR_VERSION', '0')],
-                    sources = ['src/ext/Image.c'],
-                    **pkgconfig('gdk-pixbuf-2.0')
-                    )
 
 setup (name = 'SlideShow',
        version = '1.0',
@@ -33,5 +27,5 @@ setup (name = 'SlideShow',
                        },
        package_data = { 'SlideShow.pygtk' : [ '*.glade', '*.png'],
                         },
-       scripts = [ 'src/slideshow', ],
-       ext_modules = [module1])
+       scripts = [ 'src/sscompile','src/ssdesign', 'src/sspreview' ],
+       )

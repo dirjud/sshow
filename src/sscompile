@@ -1,0 +1,59 @@
+#!/usr/bin/env python
+
+import SlideShow
+import gobject, logging, time, threading, gst, sys
+
+logging.basicConfig(level=logging.WARN)
+
+time0 = time.time()
+config, elements, frontend = SlideShow.get_config_to_frontend()
+
+if frontend is None:
+    if not(config.has_key("input_txtfile")):
+        raise Exception("No input file specified")
+    else:
+        raise Exception("Error creating frontend")
+    
+backend  = SlideShow.get_encoder_backend(config)
+pipeline = SlideShow.get_gst_pipeline(frontend, backend)
+
+class Progress(threading.Thread):
+    def __init__(self, pipeline, loop, time0):
+        threading.Thread.__init__(self)
+        self.pipeline = pipeline
+        self.time0 = time0
+        self.loop = loop
+
+    def print_status(self, N, pos, dur):
+        n = int(round(float(N) * pos / dur))
+        status = "Encoding: %s/%s |" % (SlideShow.fmt_dur(pos),SlideShow.fmt_dur(dur),) + "="*n + " "*(N-n)+"| Elapsed: %s\r" % (SlideShow.fmt_dur(time.time()-self.time0),)
+        sys.stdout.write(status)
+        sys.stdout.flush()
+
+    def run(self):
+        time.sleep(0.5)
+        N = 30
+        dur = SlideShow.query_duration(self.pipeline)
+    
+        while self.loop.is_running():
+            pos = SlideShow.query_position(self.pipeline)
+            self.print_status(N, pos, dur)
+            time.sleep(1.0)
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        self.loop.quit()
+
+
+loop = gobject.MainLoop(is_running=True)
+gobject.threads_init()
+SlideShow.start(pipeline, loop)
+progress = Progress(pipeline, loop, time0)
+progress.start()
+try:
+    loop.run()
+except KeyboardInterrupt: # catch keyboard interrupt to cleanup properly
+    pass
+
+progress.join()
+SlideShow.stop(pipeline)
+sys.stdout.write("Total Time: %s\n" % SlideShow.fmt_dur(time.time()-time0))
