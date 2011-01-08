@@ -555,9 +555,9 @@ def get_encoder_backend(config):
     backend = gst.Bin("backend")
     
     video_caps  = gst.element_factory_make("capsfilter")
-    #video_queue = gst.element_factory_make("queue")
-    video_scale = gst.element_factory_make("videoscale")
-    if 0:
+    video_ident = gst.element_factory_make("identity")
+    video_ident.props.single_segment = 1
+    if 1:
         video_enc = gst.element_factory_make("ffenc_mpeg4", "encoder")
         video_enc.props.bitrate = config["video_bitrate"] * 1000
         mux = gst.element_factory_make("mp4mux", "mux")
@@ -572,23 +572,16 @@ def get_encoder_backend(config):
         mux = gst.element_factory_make("mplex", "mux")
 
     audio_caps  = gst.element_factory_make("capsfilter")
-    #audio_queue = gst.element_factory_make("queue")
+    audio_ident = gst.element_factory_make("identity")
+    audio_ident.props.single_segment = 1
     audio_enc = gst.element_factory_make("lamemp3enc", "audio_enc")
 
     sink      = gst.element_factory_make("filesink", "sink")
     sink.set_property("location", config["outdir"]+"/"+config["slideshow_name"]+".mp4")
 
-    #video_caps.props.caps = gst.Caps(config["caps"])
-    #audio_caps.props.caps = gst.Caps(config["audio_caps"])
-
-    backend.add(video_caps, audio_caps, video_scale, video_enc, audio_enc, mux, sink)
-    video_caps.link(video_scale)
-    #video_queue.link(video_scale)
-    video_scale.link(video_enc)
-    video_enc.link(mux)
-    audio_caps.link(audio_enc)
-    #audio_queue.link(audio_enc)
-    audio_enc.link(mux)
+    backend.add(video_caps, video_ident, video_enc, audio_caps, audio_ident, audio_enc, mux, sink)
+    gst.element_link_many(video_caps, video_ident, video_enc, mux)
+    gst.element_link_many(audio_caps, audio_ident, audio_enc, mux)
     mux.link(sink)
     backend.add_pad(gst.GhostPad("video_sink", video_caps.get_pad("sink")))
     backend.add_pad(gst.GhostPad("audio_sink", audio_caps.get_pad("sink")))
@@ -617,18 +610,17 @@ def get_gst_pipeline(frontend, backend):
     frontend.get_pad("audio_src").link(backend.get_pad("audio_sink"))
     return pipeline
 
-def start(pipeline, loop):
+def start(pipeline, eos_cb, err_cb):
     bus = pipeline.get_bus()
     bus.add_signal_watch()
-    def on_message(bus, message, loop):
+    def on_message(bus, message):
         t = message.type
 	if t == gst.MESSAGE_EOS:
-            loop.quit()
+            eos_cb()
 	elif t == gst.MESSAGE_ERROR:
             err, debug = message.parse_error()
-            log.error(str(err) + ": " + str(debug))
-            loop.quit()
-    bus.connect("message", on_message, loop)
+            err_cb(err, debug)
+    bus.connect("message", on_message)
     pipeline.set_state(gst.STATE_PLAYING)
     pipeline.get_state() # wait for it to transition
 
@@ -661,17 +653,10 @@ def query_duration(pipeline):
     return pipeline.query_duration(gst.FORMAT_TIME)[0]/float(gst.SECOND)
 
 def query_position(pipeline):
-    frontend = pipeline.get_by_name("frontend")
-    comp     = frontend.get_by_name("video_composition")
-    try:
-        dur = comp.query_position(gst.FORMAT_TIME)[0]
-    except gst.QueryError:
-        dur = pipeline.query_position(gst.FORMAT_TIME)[0]
+    dur = pipeline.query_position(gst.FORMAT_TIME)[0]
     return dur/float(gst.SECOND)
 
 def fmt_dur(t):
     hrs,secs=divmod(t, 3600)
     mins,secs=divmod(secs, 60)
     return "%02d:%02d:%02d" % (int(hrs), int(mins), int(round(secs)))
-
-    

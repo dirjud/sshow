@@ -296,6 +296,7 @@ class PreviewApp(object):
 
     def on_refresh(self, *args):
         pos = self.preview.query_position()
+        pos = max(0, pos-5.) # rewind a little as a convenience
         state = self.preview.get_state()
         self.preview.pause()
         self.load(self.input_txtfile)

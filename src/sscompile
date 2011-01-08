@@ -4,6 +4,7 @@ import SlideShow
 import gobject, logging, time, threading, gst, sys
 
 logging.basicConfig(level=logging.WARN)
+log = logging.getLogger("sscompile")
 
 time0 = time.time()
 config, elements, frontend = SlideShow.get_config_to_frontend()
@@ -46,14 +47,22 @@ class Progress(threading.Thread):
 
 loop = gobject.MainLoop(is_running=True)
 gobject.threads_init()
-SlideShow.start(pipeline, loop)
+
+def eos_cb():
+    loop.quit()
+def err_cb(err, debug):
+    log.error(str(err) + str(debug))
+    loop.quit()
+
+SlideShow.start(pipeline, eos_cb, err_cb)
 progress = Progress(pipeline, loop, time0)
 progress.start()
+
 try:
     loop.run()
-except KeyboardInterrupt: # catch keyboard interrupt to cleanup properly
-    pass
+    progress.join()
+finally: 
+    #stop pipeline as part of cleanup (mainly for the KeyboardInterrupt case)
+    SlideShow.stop(pipeline)
 
-progress.join()
-SlideShow.stop(pipeline)
 sys.stdout.write("Total Time: %s\n" % SlideShow.fmt_dur(time.time()-time0))

@@ -43,7 +43,7 @@ def get_crossfade_bin(config, duration):
 
     return bin, controller
 
-def get_smpte_bin(duration, config, type=1):
+def get_smpte_bin(config, duration, type=1):
     bin = get_alpha_transition(config, element = "smptealpha")
     alpha = bin.get_by_name("alpha2")
 
