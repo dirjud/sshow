@@ -2,7 +2,6 @@ import Reader, Config
 import gst, gobject
 import logging, sys, os, subprocess
 log = logging.getLogger(__name__)
-gobject.threads_init()
 
 def cmd(x):
     log.debug(x)
@@ -482,6 +481,7 @@ def get_audio_composition(elements, config, video_info):
     # fill any remaining time with silence
     if(start_time < video_info["duration"]):
         dur = video_info["duration"] - start_time
+        print "creating ", dur, " silence at time ", start_time
         src = gst.element_factory_make("gnlsource")
         silence = get_silence(config)
         src.add(silence)
@@ -630,9 +630,9 @@ def stop(pipeline):
 
 
 def get_config_to_frontend(input_txtfile=None):
+    check_system()
     config = Config.Config()
     config.parse_argv()
-    check_system(config)
         
     if input_txtfile: # override 
         config["input_txtfile"] = input_txtfile

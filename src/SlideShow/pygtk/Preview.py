@@ -1,5 +1,7 @@
 import gtk, gobject, gst, time
 import SlideShow
+import logging
+log = logging.getLogger(__name__)
 
 ################################################################################
 class Preview(object):
@@ -99,13 +101,11 @@ class Preview(object):
         t = message.type
 	if t == gst.MESSAGE_EOS:
             self.EOS = True
-            self.pipeline.set_state(gst.STATE_PAUSED)
-            gobject.idle_add(self.update_gui_state)
+            self.pause()
 	elif t == gst.MESSAGE_ERROR:
             err, debug = message.parse_error()
-	    print "Error: %s" % err, debug
-	    self.pipeline.set_state(gst.STATE_PAUSED)
-            gobject.idle_add(self.update_gui_state)
+            log.error(str(err) + str(debug))
+            self.pause()
 
     def on_sync_message(self, bus, message):
         #print "on_sync_message", message
@@ -140,9 +140,18 @@ class Preview(object):
 
     def play(self, *args):
         self.pipeline.set_state(gst.STATE_PLAYING)
-        if self.timer is None:
-            self.timer = gobject.timeout_add(1000, self.update_gui_state)
+        gobject.idle_add(self.update_gui_state)
+        if not(self.timer):
+            self.timer = gobject.timeout_add(1000, self.play_tick)
+        return False
+
+    def play_tick(self):
         self.update_gui_state()
+        if self.get_state() == gst.STATE_PLAYING:
+            return True
+        else:
+            self.timer = None
+            return False
 
     def seek(self, position):
         pos = max(0, min(self.duration, position))
@@ -151,23 +160,25 @@ class Preview(object):
 
     def pause(self, *args):
         self.pipeline.set_state(gst.STATE_PAUSED)
-        self.update_gui_state()
+        gobject.idle_add(self.update_gui_state)
+        #self.update_gui_state()
 
     def update_gui_state(self):
-        print "update_gui_state"
         if not(self.pipeline):
             self.play_button.get_child().set_from_stock(gtk.STOCK_MEDIA_PLAY, gtk.ICON_SIZE_BUTTON)
             for button in self.buttons:
                 button.set_sensitive(False) 
                 self.slider.set_sensitive(False)
                 self.update_time(0,0)
-            return False 
+            return
 
         for button in self.buttons:
             button.set_sensitive(True) 
         self.slider.set_sensitive(True)
 
+        print "update gui state", time.time()
         state = self.get_state()
+        print "2"
         if(state in [ gst.STATE_NULL,  gst.STATE_READY ]):
             self.pipeline.set_state(gst.STATE_PAUSED)
             state = self.get_state()
@@ -188,14 +199,6 @@ class Preview(object):
 
         self.update_time(self.query_position(), self.duration)
         
-        if state == gst.STATE_PLAYING:
-            # return TRUE when PLAYING so that the 1 second timer
-            # continues to tick and update the state.
-            return True
-        else:
-            self.timer = None
-            return False
-        return 
 
     def query_position(self):
         if self.pipeline:
@@ -234,7 +237,7 @@ class Preview(object):
 ################################################################################
 class PreviewApp(object):
     def __init__(self):
-
+        logging.basicConfig(level=logging.WARN)
         self.builder = builder = gtk.Builder()
         path =  "/".join(__file__.split("/")[:-1])
         self.builder.add_from_file(path + "/preview_app.glade")

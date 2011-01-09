@@ -2,7 +2,7 @@ import os, logging
 import SlideShow
 import pygtk
 pygtk.require("2.0")
-import gtk, gobject
+import gtk, gobject, gst
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ class BackgroundSettings(Settings):
         self.element    = None
 
     def sync_from_element_to_gui(self):
-        self.duration.set_text(str(self.element.duration/1000.))
+        self.duration.set_text(str(self.element.duration/float(gst.SECOND)))
         if self.element.bg:
             color = gtk.gdk.Color(self.element.bg)
             self.colorsel.set_previous_color(color)
@@ -59,7 +59,7 @@ class BackgroundSettings(Settings):
     def on_duration(self, *args):
         try:
             dur = float(self.duration.get_text())
-            self.element.duration = int(dur * 1000)
+            self.element.duration = int(dur * gst.SECOND)
             self.element_updated()
         except:
             self.duration.set_text(str(self.element.duration/1000.))

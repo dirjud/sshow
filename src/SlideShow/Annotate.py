@@ -39,8 +39,8 @@ def parse_annotate_params(self, element, params, duration):
     def set_prop(element, prop, value):
         try:
             element.set_property(prop, value)
-        except AttributeError:
-            log.warn("Annotation: Cannot set property %s to %s because gstreamer-plugins-base is too old. Update to enable this feature.")
+        except TypeError:
+            log.warn("Annotation: Cannot set property %s to %s because gstreamer-plugins-base is too old. Update to enable this feature." % (prop, value))
 
     set_prop(element, "text",              props["text"])
     set_prop(element, "shaded-background", int(props["shaded_background"]))

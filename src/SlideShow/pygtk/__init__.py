@@ -8,6 +8,7 @@ log = logging.getLogger(__name__)
 
 class SlideShowApp(object):       
     def __init__(self):
+        logging.basicConfig(level=logging.WARN)
         self.builder = builder = gtk.Builder()
         path =  "/".join(__file__.split("/")[:-1])
         builder.add_from_file(path + "/slideshow.glade")
@@ -269,7 +270,9 @@ class SlideShowApp(object):
         for element in elements:
             self.elelist.append([element, element])
         self.window.set_title("SlideShow: "+os.path.basename(self.config["input_txtfile"]))
-        self.dirty = True
+        self.dirty = False
+        self.update_preview()
+
 
     def remove_element(self, element):
         if SlideShow.isSlide(element):
@@ -294,6 +297,18 @@ class SlideShowApp(object):
         self.elelist[self.selected_path] = [ self.element, self.element ]
         self.dirty = True
 
+    def get_elements(self):
+        elements = []
+        prev = None
+        for txt, element in self.elelist:
+            elements.append(element)
+            element.next = None
+            element.prev = prev
+            if prev:
+                prev.next = element
+        return elements
+
     def update_preview(self):
-        frontend = SlideShow.get_frontend(elements, self.config)
-        self.preview.set_frontend(frontend)
+        frontend = SlideShow.get_frontend(self.get_elements(), self.config)
+        self.preview.set_frontend(frontend, self.config)
+        self.preview.pause()
