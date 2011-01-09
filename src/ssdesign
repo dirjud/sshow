@@ -1,10 +1,8 @@
 #!/usr/bin/env python
-import SlideShow
-import SlideShow.pygtk
 import pygtk
 pygtk.require("2.0")
 import gtk
-app = SlideShow.pygtk.SlideShowApp()
-    
 gtk.gdk.threads_init()
+import SlideShow.pygtk
+app = SlideShow.pygtk.SlideShowApp()
 gtk.main()

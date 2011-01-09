@@ -2,7 +2,7 @@
 import pygtk
 pygtk.require("2.0")
 import gtk
+gtk.gdk.threads_init()
 import SlideShow.pygtk.Preview
 app = SlideShow.pygtk.Preview.PreviewApp()
-gtk.gdk.threads_init()
 gtk.main()

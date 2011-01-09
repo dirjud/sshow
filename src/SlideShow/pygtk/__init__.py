@@ -1,7 +1,5 @@
 import os, logging, threading, time
 import SlideShow, Settings, Preview
-import pygtk
-pygtk.require("2.0")
 import gtk, gobject, gst
 
 log = logging.getLogger(__name__)

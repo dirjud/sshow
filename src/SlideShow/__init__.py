@@ -1,5 +1,5 @@
 import Reader, Config
-import gst, gobject
+import gst
 import logging, sys, os, subprocess
 log = logging.getLogger(__name__)
 
