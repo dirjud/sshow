@@ -435,16 +435,17 @@ def get_video_composition(elements, config):
     return comp, dict(duration=start_time)
 
 def get_silence(config):
-    bin = gst.Bin()
+    #bin = gst.Bin()
     silence = gst.element_factory_make("audiotestsrc")
     silence.props.wave=4 # silence
     silence.props.volume=0.0
-    caps    = gst.element_factory_make("capsfilter")
-    caps.props.caps = gst.Caps(config["audio_caps"])
-    bin.add(silence, caps)
-    silence.link(caps)
-    bin.add_pad(gst.GhostPad("src", caps.get_pad("src")))
-    return bin
+    #caps    = gst.element_factory_make("capsfilter")
+    #caps.props.caps = gst.Caps(config["audio_caps"])
+    #bin.add(silence, caps)
+    #silence.link(caps)
+    #bin.add_pad(gst.GhostPad("src", caps.get_pad("src")))
+    #return bin
+    return silence
 
 def get_audio_composition(elements, config, video_info):
     comp = gst.element_factory_make("gnlcomposition", "audio_composition")

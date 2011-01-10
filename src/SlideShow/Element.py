@@ -46,6 +46,15 @@ def cmdif(src, outdir, extension, command):
     cmd(command % dest)
     return dest
             
+def get_rgb(x):
+    a = r = g = b = 0xFF
+    
+    if type(x) is str and x[0] == "#":
+        r = int(x[1:3],16)
+        g = int(x[3:5],16)
+        b = int(x[5:7],16)
+    return r,g,b
+
 def get_color(x):
     a = r = g = b = 0xFF
     
@@ -203,7 +212,7 @@ class Image(Element):
             duration = self.duration
         fx_names = [ x.name for x in self.effects ]
 
-        self.gstbin = gst.Bin()
+        bin = gst.Bin()
         elements = []
         for name in [ "filesrc", "decodebin2", "ffmpegcolorspace", "imagefreeze", "kenburns", "capsfilter",  ]:
             elements.append(gst.element_factory_make(name))
@@ -219,7 +228,7 @@ class Image(Element):
         kenburns.set_property("duration", duration)
         capsfilter.set_property("caps", self.config["caps"])
     
-        self.gstbin.add(*elements)
+        bin.add(*elements)
         filesrc.link(decodebin2)
         ffmpegcolorspace.link(imagefreeze)
         imagefreeze.link(kenburns)
@@ -252,8 +261,8 @@ class Image(Element):
             pad.link(sinkpad)
 
         decodebin2.connect("new-decoded-pad", on_pad, ffmpegcolorspace)
-        self.gstbin.add_pad(gst.GhostPad("src", elements[-1].get_pad("src")))
-        return self.gstbin
+        bin.add_pad(gst.GhostPad("src", elements[-1].get_pad("src")))
+        return bin
 
 
     def parse_kb_params(self, zoom, pos):
@@ -330,7 +339,6 @@ class Background(Image):
         return x
 
     def initialize(self):
-        self.extension="png"
         if self.bg == "":
             prev_bg = self.prev._find_background()
             self.filename = prev_bg.filename
@@ -341,10 +349,19 @@ class Background(Image):
         #elif os.path.exists(self.bg): # if effect is a background file
         #    self.filename = crop_img(self.bg, self.extension, self.config)
         else: ## use plain black background with no picture
+            r,g,b = get_rgb(self.bg)
+            self.filename = self.config["workdir"]+"/%02x%02x%02x.ppm" % (r,g,b)
+            self.extension="ppm"
+            print r,g,b,self.filename
             self.width = self.config["width"]
             self.height= self.config["height"]
-            convert = "convert -size "+str(self.width)+'x'+str(self.height)+" xc:"+self.bg+" -type TrueColorMatte -depth 8 %s"
-            self.filename = cmdif(None, self.config["workdir"], self.extension, convert)
+            f = open(self.filename, "w")
+            f.write("P6\n%d %d\n255\n" % (self.width, self.height))
+            import struct
+            f.write( struct.pack("BBB", r,g,b) * (self.width*self.height))
+            f.close()
+            #convert = "convert -size "+str(self.width)+'x'+str(self.height)+" xc:"+self.bg+" -type TrueColorMatte -depth 8 %s"
+            #self.filename = cmdif(None, self.config["workdir"], self.extension, convert)
 
 
 ################################################################################
@@ -405,8 +422,8 @@ class Transition(Element):
         return "%s:%g" % (self.name, dur2flt(self.duration))
 
     def get_bin(self):
-        self.gstbin, self.controller = self.get_transition_bin(self.config, self.duration)
-        return self.gstbin
+        bin, self.controller = self.get_transition_bin(self.config, self.duration)
+        return bin
 
 
 ################################################################################
@@ -450,7 +467,7 @@ class Audio(Element):
         self.duration = get_duration(self.filename)
 
     def get_bin(self, duration=None):
-        self.gstbin = gst.Bin()
+        bin = gst.Bin()
         elements = []
         for name in [ "filesrc", "decodebin2", "audioconvert", "volume", "capsfilter",  ]:
             elements.append(gst.element_factory_make(name, name))
@@ -458,7 +475,7 @@ class Audio(Element):
     
         capsfilter.props.caps = self.config["audio_caps"]
         filesrc.set_property("location",  self.filename)
-        self.gstbin.add(*elements)
+        bin.add(*elements)
         filesrc.link(decodebin2)
         audioconvert.link(volume)
         volume.link(capsfilter)
@@ -482,8 +499,8 @@ class Audio(Element):
             pad.link(sinkpad)
 
         decodebin2.connect("new-decoded-pad", on_pad, audioconvert)
-        self.gstbin.add_pad(gst.GhostPad("src", capsfilter.get_pad("src")))
-        return self.gstbin
+        bin.add_pad(gst.GhostPad("src", capsfilter.get_pad("src")))
+        return bin
 
     
     

@@ -181,6 +181,7 @@ class SlideShowApp(object):
             self.settings.on_paint()
 
     def on_exit(self, evt=None):
+        self.preview.stop()
         gtk.main_quit()
         
     def on_new(self, evt=None):
@@ -304,6 +305,7 @@ class SlideShowApp(object):
             element.prev = prev
             if prev:
                 prev.next = element
+            prev = element
         return elements
 
     def update_preview(self):
