@@ -298,7 +298,7 @@ def initialize_pipeline(pipeline, config):
 
     height = config["dvd_height"]
     width = int(round(config["dvd_height"] * config["aspect_ratio_float"]))
-    config["caps"] = gst.Caps("video/x-raw-yuv,width=%d,height=%d,framerate=(fraction)%d/%d,format=(fourcc)I420" % (width, height, framerate_numer, framerate_denom))
+    config["video_caps"] = gst.Caps("video/x-raw-yuv,width=%d,height=%d,framerate=(fraction)%d/%d,format=(fourcc)AYUV" % (width, height, framerate_numer, framerate_denom))
     config["width"]  = width
     config["height"] = height
 
@@ -388,13 +388,34 @@ def initialize_pipeline(pipeline, config):
     #print "Video Duration:", video_duration
     return dict(audio_duration=audio_duration, video_duration=video_duration, video_element_count=video_element_count)
 
-def get_video_composition(elements, config):
-    comp = gst.element_factory_make("gnlcomposition", "video_composition")
+def get_video_bin(elements, config):
+    foreground = gst.element_factory_make("gnlcomposition", "foreground")
+    background = gst.element_factory_make("gnlcomposition", "background")
+    prev_bg_src = None
 
-    start_time = 0
-    priority = 1
+    fg_start_time = 0
+    bg_start_time = 0
+    priority      = 1
     for element in elements:
-        if isSlide(element):
+
+        if element.__class__ == Element.Background:
+            dur = element.duration
+            src = gst.element_factory_make("gnlsource")
+            src.add(element.get_bin())
+            src.props.start          = bg_start_time
+            src.props.media_start    = 0
+            src.props.priority       = 1
+
+            bg_dur = fg_start_time - bg_start_time
+            if prev_bg_src:
+                prev_bg_src.props.duration       = bg_dur
+                prev_bg_src.props.media_duration = bg_dur
+            
+            prev_bg_src   = src
+            bg_start_time = fg_start_time
+            fg_start_time += element.duration
+
+        elif isSlide(element):
             dur = element.duration
 
             prev_transition = find_prev_transition(element)
@@ -410,19 +431,19 @@ def get_video_composition(elements, config):
 
             src = gst.element_factory_make("gnlsource")
             src.add(element.get_bin(dur))
-            src.props.start          = start_time - prev_dur
+            src.props.start          = fg_start_time - prev_dur
             src.props.duration       = dur
             src.props.media_start    = 0
             src.props.media_duration = dur
             src.props.priority       = priority
-            comp.add(src)
+            foreground.add(src)
 
             priority   += 1
-            start_time += element.duration
+            fg_start_time += element.duration
 
         elif element.__class__ == Element.Transition:
             dur = element.duration
-
+        
             op = gst.element_factory_make("gnloperation")
             op.add(element.get_bin())
             op.props.start          = start_time - dur/2
@@ -430,9 +451,29 @@ def get_video_composition(elements, config):
             op.props.media_start    = 0
             op.props.media_duration = dur
             op.props.priority        = 0
-            comp.add(op)
-            
-    return comp, dict(duration=start_time)
+            foreground.add(op)
+
+
+    # fill the duration of last background element
+    bg_dur = fg_start_time - bg_start_time
+    prev_bg_src.props.duration       = bg_dur
+    prev_bg_src.props.media_duration = bg_dur
+
+    video_dur = fg_start_time
+
+    bin = gst.Bin()
+    mixer = gst.element_factory_make("videomixer")
+    bin.add(mixer, foreground, background)
+
+    def on_pad(comp, pad, mixer):
+        capspad = mixer.get_compatible_pad(pad, pad.get_caps())
+        pad.link(capspad)
+    foreground.connect("pad-added", on_pad, mixer)
+    background.connect("pad-added", on_pad, mixer)
+
+    bin.add_pad(gst.GhostPad("src", mixer.get_pad("src")))
+    
+    return bin, dict(duration=video_dur)
 
 def get_silence(config):
     #bin = gst.Bin()
@@ -507,18 +548,18 @@ def get_audio_composition(elements, config, video_info):
     return comp, dict(duration=start_time)
 
 def get_frontend(elements, config):
-    video_comp, video_info = get_video_composition(elements, config)
+    video_bin,  video_info = get_video_bin(elements, config)
     audio_comp, audio_info = get_audio_composition(elements, config, video_info)
     #print "video_info", video_info
     #print "audio_info", audio_info
 
     video_caps = gst.element_factory_make("capsfilter")
     audio_caps = gst.element_factory_make("capsfilter")
-    video_caps.props.caps = gst.Caps(config["caps"])
+    video_caps.props.caps = gst.Caps(config["video_caps"])
     audio_caps.props.caps = gst.Caps(config["audio_caps"])
 
     frontend = gst.Bin("frontend")
-    frontend.add(video_comp, audio_comp, video_caps, audio_caps)
+    frontend.add(video_bin, audio_comp, video_caps, audio_caps)
 
     def on_pad(comp, pad, caps):
         capspad = caps.get_compatible_pad(pad, pad.get_caps())
@@ -527,7 +568,8 @@ def get_frontend(elements, config):
         else:
             print "pad caps", str(pad.get_caps())
             raise Exception("Cannot find capabilible pads")
-    video_comp.connect("pad-added", on_pad, video_caps)
+    #video_comp.connect("pad-added", on_pad, video_caps)
+    video_bin.link(video_caps)
     audio_comp.connect("pad-added", on_pad, audio_caps)
     frontend.add_pad(gst.GhostPad("video_src", video_caps.get_pad("src")))
     frontend.add_pad(gst.GhostPad("audio_src", audio_caps.get_pad("src")))

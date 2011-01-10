@@ -214,7 +214,7 @@ class Image(Element):
 
         bin = gst.Bin()
         elements = []
-        for name in [ "filesrc", "decodebin2", "ffmpegcolorspace", "imagefreeze", "kenburns", "capsfilter",  ]:
+        for name in [ "filesrc", "decodebin2", "ffmpegcolorspace", "imagefreeze", "kenburns", "ffmpegcolorspace", "capsfilter",  ]:
             elements.append(gst.element_factory_make(name))
             exec("%s = elements[-1]" % name)
     
@@ -226,15 +226,11 @@ class Image(Element):
             
         filesrc.set_property("location",  self.filename)
         kenburns.set_property("duration", duration)
-        capsfilter.set_property("caps", self.config["caps"])
+        capsfilter.set_property("caps", self.config["video_caps"])
     
         bin.add(*elements)
         filesrc.link(decodebin2)
-        ffmpegcolorspace.link(imagefreeze)
-        imagefreeze.link(kenburns)
-        kenburns.link(capsfilter)
-        if annotate:
-            capsfilter.link(annotate)
+        gst.element_link_many(*elements[2:])
 
         if("kenburns" in fx_names):
             i = fx_names.index("kenburns")
@@ -260,7 +256,7 @@ class Image(Element):
             sinkpad = sink_element.get_compatible_pad(pad, pad.get_caps())
             pad.link(sinkpad)
 
-        decodebin2.connect("new-decoded-pad", on_pad, ffmpegcolorspace)
+        decodebin2.connect("new-decoded-pad", on_pad, elements[2])
         bin.add_pad(gst.GhostPad("src", elements[-1].get_pad("src")))
         return bin
 
@@ -362,6 +358,9 @@ class Background(Image):
             f.close()
             #convert = "convert -size "+str(self.width)+'x'+str(self.height)+" xc:"+self.bg+" -type TrueColorMatte -depth 8 %s"
             #self.filename = cmdif(None, self.config["workdir"], self.extension, convert)
+
+#    def get_bin(self):
+        
 
 
 ################################################################################
