@@ -1,9 +1,0 @@
-INSTALL
--------
-
-./autogen.sh
-./configure --prefix=/usr --libdir=/usr/lib64
-make
-sudo make install
-
-gst-inspect iconoverlay

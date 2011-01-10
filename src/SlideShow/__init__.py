@@ -74,7 +74,7 @@ def set_font(config, name):
 
 ################################################################################
 def isSlide(element):
-    return element.isa("Image") and element.duration > 0
+    return (element.isa("Image") and element.duration > 0) or element.isa("Title")
 
 def nextSlide(pos, pipeline):
     for element in pipeline[pos+1:]:
@@ -298,11 +298,11 @@ def initialize_pipeline(pipeline, config):
 
     height = config["dvd_height"]
     width = int(round(config["dvd_height"] * config["aspect_ratio_float"]))
-    config["video_caps"] = gst.Caps("video/x-raw-yuv,width=%d,height=%d,framerate=(fraction)%d/%d,format=(fourcc)AYUV" % (width, height, framerate_numer, framerate_denom))
+    config["video_caps"] = "video/x-raw-yuv,width=%d,height=%d,framerate=(fraction)%d/%d" % (width, height, framerate_numer, framerate_denom)
     config["width"]  = width
     config["height"] = height
 
-    config["audio_caps"] = gst.Caps("audio/x-raw-int, endianness=(int)1234, signed=(boolean)true, width=(int)16, depth=(int)16, rate=(int)44100")
+    config["audio_caps"] = "audio/x-raw-int, endianness=(int)1234, signed=(boolean)true, width=(int)16, depth=(int)16, rate=(int)44100"
 
     if config.has_key("output_size"):
 	# used user-set size, instead of defaults!
@@ -388,6 +388,10 @@ def initialize_pipeline(pipeline, config):
     #print "Video Duration:", video_duration
     return dict(audio_duration=audio_duration, video_duration=video_duration, video_element_count=video_element_count)
 
+def print_gnlcomp(comp):
+    for element in comp.elements():
+        print " ", str(type(element)).split(".")[-1], " start=", Element.dur2flt(element.props.start), " dur=", Element.dur2flt(element.props.duration)
+
 def get_video_bin(elements, config):
     foreground = gst.element_factory_make("gnlcomposition", "foreground")
     background = gst.element_factory_make("gnlcomposition", "background")
@@ -401,10 +405,11 @@ def get_video_bin(elements, config):
         if element.__class__ == Element.Background:
             dur = element.duration
             src = gst.element_factory_make("gnlsource")
-            src.add(element.get_bin())
+            src.add(element.get_bin(duration=1))
             src.props.start          = bg_start_time
             src.props.media_start    = 0
             src.props.priority       = 1
+            background.add(src)
 
             bg_dur = fg_start_time - bg_start_time
             if prev_bg_src:
@@ -463,16 +468,28 @@ def get_video_bin(elements, config):
 
     bin = gst.Bin()
     mixer = gst.element_factory_make("videomixer")
-    bin.add(mixer, foreground, background)
+    caps1 = gst.element_factory_make("capsfilter")
+    caps1.props.caps = config.get_video_caps("AYUV")
+    color = gst.element_factory_make("ffmpegcolorspace")
+    caps2 = gst.element_factory_make("capsfilter")
+    caps2.props.caps = config.get_video_caps("I420")
+    bin.add(foreground, background, mixer, caps1, color, caps2)
+    gst.element_link_many(mixer, caps1, color, caps2)
 
     def on_pad(comp, pad, mixer):
+        print comp.get_name()
         capspad = mixer.get_compatible_pad(pad, pad.get_caps())
         pad.link(capspad)
     foreground.connect("pad-added", on_pad, mixer)
     background.connect("pad-added", on_pad, mixer)
 
-    bin.add_pad(gst.GhostPad("src", mixer.get_pad("src")))
-    
+    bin.add_pad(gst.GhostPad("src", caps2.get_pad("src")))
+
+    print "foreground:"
+    print_gnlcomp(foreground)
+
+    print "background:"
+    print_gnlcomp(background)
     return bin, dict(duration=video_dur)
 
 def get_silence(config):

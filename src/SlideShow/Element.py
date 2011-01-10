@@ -214,19 +214,23 @@ class Image(Element):
 
         bin = gst.Bin()
         elements = []
-        for name in [ "filesrc", "decodebin2", "ffmpegcolorspace", "imagefreeze", "kenburns", "ffmpegcolorspace", "capsfilter",  ]:
+        for name in [ "filesrc", "decodebin2", "ffmpegcolorspace", "capsfilter", "imagefreeze", "kenburns",  ]:
             elements.append(gst.element_factory_make(name))
             exec("%s = elements[-1]" % name)
-    
+
         annotate = None
         if "annotate" in fx_names:
             annotate = gst.element_factory_make("textoverlay")
             elements.append(annotate)
             Annotate.parse_annotate_params(self, annotate, self.effects[fx_names.index("annotate")].param, duration)
-            
+
+        caps = gst.element_factory_make("capsfilter")
+        elements.append(caps)
+
         filesrc.set_property("location",  self.filename)
         kenburns.set_property("duration", duration)
-        capsfilter.set_property("caps", self.config["video_caps"])
+        capsfilter.set_property("caps", gst.Caps("video/x-raw-yuv,format=(fourcc)AYUV"))
+        caps.set_property("caps", self.config.get_video_caps("AYUV"))
     
         bin.add(*elements)
         filesrc.link(decodebin2)
@@ -256,7 +260,7 @@ class Image(Element):
             sinkpad = sink_element.get_compatible_pad(pad, pad.get_caps())
             pad.link(sinkpad)
 
-        decodebin2.connect("new-decoded-pad", on_pad, elements[2])
+        decodebin2.connect("new-decoded-pad", on_pad, ffmpegcolorspace)
         bin.add_pad(gst.GhostPad("src", elements[-1].get_pad("src")))
         return bin
 
@@ -364,7 +368,7 @@ class Background(Image):
 
 
 ################################################################################
-class Title(Image):
+class Title(Element):
     names = ["title", "titlebar"]
     def __init__(self, location, name, duration, title1, title2):
         Element.__init__(self, location)
@@ -398,6 +402,32 @@ class Title(Image):
         convert = ("convert -size %dx%d xc:transparent -fill '%s' -pointsize %s -gravity Center -font %s -annotate 0 '%s' -type TrueColorMatte -depth 9 miff:- | composite -compose src-over -type TrueColorMatte -depth 8 - %s" % (self.width, self.height, fcolor, fsize, self.config["title_font"], self.title1.replace("'","'\"'\"'"), bg.filename)).replace("%", "%%") + " %s"
         
         self.filename = cmdif(bg.filename, self.config["workdir"], self.extension, convert)
+
+    def get_bin(self, duration=None):
+        if duration is None:
+            duration = self.duration
+
+        bin = gst.Bin()
+        elements = []
+        for name in [ "videotestsrc", "capsfilter", "alpha", "textoverlay", "imagefreeze", ]:
+            elements.append(gst.element_factory_make(name))
+            exec("%s = elements[-1]" % name)
+
+        caps2 = gst.element_factory_make("capsfilter")
+        elements.append(caps2)
+
+        Annotate.parse_annotate_params(self, textoverlay, "text=%s" % self.title1, duration)
+
+        videotestsrc.set_property("pattern", "black")
+        capsfilter.set_property("caps", gst.Caps("video/x-raw-yuv,format=(fourcc)AYUV"))
+        alpha.set_property("alpha", 0.0)
+        caps2.set_property("caps", self.config.get_video_caps("AYUV"))
+    
+        bin.add(*elements)
+        gst.element_link_many(*elements)
+        bin.add_pad(gst.GhostPad("src", elements[-1].get_pad("src")))
+        return bin
+        
 
 ################################################################################
 class Transition(Element):

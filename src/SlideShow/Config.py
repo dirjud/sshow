@@ -1,4 +1,4 @@
-import optparse, logging, os
+import optparse, logging, os, gst
 
 log = logging.getLogger(__name__)
 
@@ -152,6 +152,12 @@ class Config(dict):
 
     def set_var(self, key, val):
         self[key] = val
+
+    def get_video_caps(self, fourcc="AYUV"):
+        """returns a gst.Caps with the configured caps. Set the fourcc 
+        argument to specify a desired format, otherwise leave it None"""
+        caps = self["video_caps"] + ",format=(fourcc)"+fourcc
+        return gst.Caps(caps)
 
     def parse_argv(self):
         """Updates this config with variables passed on the command line"""
