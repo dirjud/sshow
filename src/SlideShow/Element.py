@@ -409,14 +409,14 @@ class Title(Element):
 
         bin = gst.Bin()
         elements = []
-        for name in [ "videotestsrc", "capsfilter", "alpha", "textoverlay", "imagefreeze", ]:
+        for name in [ "videotestsrc", "capsfilter", "alpha", "textoverlay", ]:
             elements.append(gst.element_factory_make(name))
             exec("%s = elements[-1]" % name)
 
         caps2 = gst.element_factory_make("capsfilter")
         elements.append(caps2)
 
-        Annotate.parse_annotate_params(self, textoverlay, "text=%s" % self.title1, duration)
+        Annotate.parse_annotate_params(self, textoverlay, "text=%s;ypos=0.5;xpos=0.5" % self.title1, duration)
 
         videotestsrc.set_property("pattern", "black")
         capsfilter.set_property("caps", gst.Caps("video/x-raw-yuv,format=(fourcc)AYUV"))

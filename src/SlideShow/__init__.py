@@ -403,6 +403,8 @@ def get_video_bin(elements, config):
     for element in elements:
 
         if element.__class__ == Element.Background:
+            bg_dur = fg_start_time - bg_start_time
+            bg_start_time = fg_start_time
             dur = element.duration
             src = gst.element_factory_make("gnlsource")
             src.add(element.get_bin(duration=1))
@@ -411,13 +413,11 @@ def get_video_bin(elements, config):
             src.props.priority       = 1
             background.add(src)
 
-            bg_dur = fg_start_time - bg_start_time
             if prev_bg_src:
                 prev_bg_src.props.duration       = bg_dur
                 prev_bg_src.props.media_duration = bg_dur
             
             prev_bg_src   = src
-            bg_start_time = fg_start_time
             fg_start_time += element.duration
 
         elif isSlide(element):
@@ -451,7 +451,7 @@ def get_video_bin(elements, config):
         
             op = gst.element_factory_make("gnloperation")
             op.add(element.get_bin())
-            op.props.start          = start_time - dur/2
+            op.props.start          = fg_start_time - dur/2
             op.props.duration       = dur
             op.props.media_start    = 0
             op.props.media_duration = dur
@@ -467,21 +467,26 @@ def get_video_bin(elements, config):
     video_dur = fg_start_time
 
     bin = gst.Bin()
+    id0   = gst.element_factory_make("identity")
+    id0.props.single_segment = 1
+    id1   = gst.element_factory_make("identity")
+    id1.props.single_segment = 1
     mixer = gst.element_factory_make("videomixer")
     caps1 = gst.element_factory_make("capsfilter")
     caps1.props.caps = config.get_video_caps("AYUV")
     color = gst.element_factory_make("ffmpegcolorspace")
     caps2 = gst.element_factory_make("capsfilter")
     caps2.props.caps = config.get_video_caps("I420")
-    bin.add(foreground, background, mixer, caps1, color, caps2)
+    bin.add(id0, id1, foreground, background, mixer, caps1, color, caps2)
+    id0.link(mixer)
+    id1.link(mixer)
     gst.element_link_many(mixer, caps1, color, caps2)
 
-    def on_pad(comp, pad, mixer):
-        print comp.get_name()
-        capspad = mixer.get_compatible_pad(pad, pad.get_caps())
+    def on_pad(comp, pad, element):
+        capspad = element.get_pad("sink")
         pad.link(capspad)
-    foreground.connect("pad-added", on_pad, mixer)
-    background.connect("pad-added", on_pad, mixer)
+    foreground.connect("pad-added", on_pad, id1)
+    background.connect("pad-added", on_pad, id0)
 
     bin.add_pad(gst.GhostPad("src", caps2.get_pad("src")))
 
@@ -617,7 +622,7 @@ def get_encoder_backend(config):
     video_caps  = gst.element_factory_make("capsfilter")
     video_ident = gst.element_factory_make("identity")
     video_ident.props.single_segment = 1
-    if 1:
+    if 0:
         video_enc = gst.element_factory_make("ffenc_mpeg4", "encoder")
         video_enc.props.bitrate = config["video_bitrate"] * 1000
         mux = gst.element_factory_make("mp4mux", "mux")
@@ -673,14 +678,15 @@ def get_gst_pipeline(frontend, backend):
 def start(pipeline, eos_cb, err_cb):
     bus = pipeline.get_bus()
     bus.add_signal_watch()
-    def on_message(bus, message):
+    bus.enable_sync_message_emission()
+    def on_message(bus, message, eos_cb, err_cb):
         t = message.type
 	if t == gst.MESSAGE_EOS:
             eos_cb()
 	elif t == gst.MESSAGE_ERROR:
             err, debug = message.parse_error()
             err_cb(err, debug)
-    bus.connect("message", on_message)
+    bus.connect("message", on_message, eos_cb, err_cb)
     pipeline.set_state(gst.STATE_PLAYING)
     pipeline.get_state() # wait for it to transition
 
