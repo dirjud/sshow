@@ -117,7 +117,7 @@ class Element():
             #raise Exception("Cannot find background")
             # no background found, so return default black one
             element = Background("generated", "background", 0, "", "#000000")
-            element.create_slide(self.config)
+            #element.create_slide(self.config)
             return element
 
     def __str__(self):
@@ -383,25 +383,25 @@ class Title(Element):
     def __str__(self):
         return "%s:%g:%s:%s" % (self.name, dur2flt(self.duration), self.title1, self.title2)
 
-    def initialize(self):
-        self.extension = "png"
-        bg = self._find_background()
-        fsize = self.config["title_font_size"]
-        fcolor = self.config["title_font_color"]
-
-	if self.config["low_quality"] or self.config["vcd"] or self.config["output_format"] in ['flv', 'swf', 'mp4', 'mpg']:
-            fsize = fsize * self.config["dvd_height"] / 480
-            
-	## if background is black & font color is black, change font to white
-        if bg.bg == "black" and fcolor == 'black':
-            fcolor='white'
-        
-        self.width = self.config["width"]*1
-        self.height= self.config["height"]*1
-
-        convert = ("convert -size %dx%d xc:transparent -fill '%s' -pointsize %s -gravity Center -font %s -annotate 0 '%s' -type TrueColorMatte -depth 9 miff:- | composite -compose src-over -type TrueColorMatte -depth 8 - %s" % (self.width, self.height, fcolor, fsize, self.config["title_font"], self.title1.replace("'","'\"'\"'"), bg.filename)).replace("%", "%%") + " %s"
-        
-        self.filename = cmdif(bg.filename, self.config["workdir"], self.extension, convert)
+#    def initialize(self):
+#        self.extension = "png"
+#        bg = self._find_background()
+#        fsize = self.config["title_font_size"]
+#        fcolor = self.config["title_font_color"]
+#
+#	if self.config["low_quality"] or self.config["vcd"] or self.config["output_format"] in ['flv', 'swf', 'mp4', 'mpg']:
+#            fsize = fsize * self.config["dvd_height"] / 480
+#            
+#	## if background is black & font color is black, change font to white
+#        if bg.bg == "black" and fcolor == 'black':
+#            fcolor='white'
+#        
+#        self.width = self.config["width"]*1
+#        self.height= self.config["height"]*1
+#
+#        convert = ("convert -size %dx%d xc:transparent -fill '%s' -pointsize %s -gravity Center -font %s -annotate 0 '%s' -type TrueColorMatte -depth 9 miff:- | composite -compose src-over -type TrueColorMatte -depth 8 - %s" % (self.width, self.height, fcolor, fsize, self.config["title_font"], self.title1.replace("'","'\"'\"'"), bg.filename)).replace("%", "%%") + " %s"
+#        
+#        self.filename = cmdif(bg.filename, self.config["workdir"], self.extension, convert)
 
     def get_bin(self, duration=None):
         if duration is None:

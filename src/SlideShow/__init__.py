@@ -390,28 +390,27 @@ def initialize_pipeline(pipeline, config):
 
 def print_gnlcomp(comp):
     for element in comp.elements():
-        print " ", str(type(element)).split(".")[-1], " start=", Element.dur2flt(element.props.start), " dur=", Element.dur2flt(element.props.duration)
+        print " start=%3.3g dur=%3.3g %s" % (Element.dur2flt(element.props.start), Element.dur2flt(element.props.duration), element.get_name())
 
 def get_video_bin(elements, config):
-    foreground = gst.element_factory_make("gnlcomposition", "foreground")
-    background = gst.element_factory_make("gnlcomposition", "background")
-    prev_bg_src = None
+    comp = gst.element_factory_make("gnlcomposition", "composition")
 
+    prev_bg_src = None
     fg_start_time = 0
     bg_start_time = 0
-    priority      = 1
-    for element in elements:
+    priority      = 2 # background tracks get priority 1. mixer get priority 0.
+    for i, element in enumerate(elements):
 
         if element.__class__ == Element.Background:
             bg_dur = fg_start_time - bg_start_time
             bg_start_time = fg_start_time
             dur = element.duration
-            src = gst.element_factory_make("gnlsource")
+            src = gst.element_factory_make("gnlsource", "bg"+str(i)+"_"+element.name)
             src.add(element.get_bin(duration=1))
             src.props.start          = bg_start_time
             src.props.media_start    = 0
             src.props.priority       = 1
-            background.add(src)
+            comp.add(src)
 
             if prev_bg_src:
                 prev_bg_src.props.duration       = bg_dur
@@ -434,67 +433,61 @@ def get_video_bin(elements, config):
             if(next_transition):
                 dur += next_transition.duration/2
 
-            src = gst.element_factory_make("gnlsource")
+            src = gst.element_factory_make("gnlsource", "fg"+str(i)+"_"+element.name)
             src.add(element.get_bin(dur))
             src.props.start          = fg_start_time - prev_dur
             src.props.duration       = dur
             src.props.media_start    = 0
             src.props.media_duration = dur
             src.props.priority       = priority
-            foreground.add(src)
+            comp.add(src)
 
             priority   += 1
             fg_start_time += element.duration
 
-        elif element.__class__ == Element.Transition:
-            dur = element.duration
-        
-            op = gst.element_factory_make("gnloperation")
-            op.add(element.get_bin())
-            op.props.start          = fg_start_time - dur/2
-            op.props.duration       = dur
-            op.props.media_start    = 0
-            op.props.media_duration = dur
-            op.props.priority        = 0
-            foreground.add(op)
-
+#        elif element.__class__ == Element.Transition:
+#            dur = element.duration
 
     # fill the duration of last background element
     bg_dur = fg_start_time - bg_start_time
-    prev_bg_src.props.duration       = bg_dur
-    prev_bg_src.props.media_duration = bg_dur
+    if prev_bg_src:
+        prev_bg_src.props.duration       = bg_dur
+        prev_bg_src.props.media_duration = bg_dur
 
     video_dur = fg_start_time
+        
+    op = gst.element_factory_make("gnloperation", "mixer")
+    mixer = gst.element_factory_make("videomixer")
+    #mixer.props.background = "black"
+    op.add(mixer)
+    op.props.start          = 0
+    op.props.duration       = video_dur
+    op.props.media_start    = 0
+    op.props.media_duration = video_dur
+    op.props.priority        = 0
+    comp.add(op)
+
+
+
 
     bin = gst.Bin()
-    id0   = gst.element_factory_make("identity")
-    id0.props.single_segment = 1
-    id1   = gst.element_factory_make("identity")
-    id1.props.single_segment = 1
-    mixer = gst.element_factory_make("videomixer")
-    caps1 = gst.element_factory_make("capsfilter")
-    caps1.props.caps = config.get_video_caps("AYUV")
+    ident   = gst.element_factory_make("identity")
+    ident.props.single_segment = 1
     color = gst.element_factory_make("ffmpegcolorspace")
-    caps2 = gst.element_factory_make("capsfilter")
-    caps2.props.caps = config.get_video_caps("I420")
-    bin.add(id0, id1, foreground, background, mixer, caps1, color, caps2)
-    id0.link(mixer)
-    id1.link(mixer)
-    gst.element_link_many(mixer, caps1, color, caps2)
+    caps = gst.element_factory_make("capsfilter")
+    caps.props.caps = config.get_video_caps("I420")
+    bin.add(comp, ident, color, caps)
+    gst.element_link_many(ident, color, caps)
 
     def on_pad(comp, pad, element):
         capspad = element.get_pad("sink")
         pad.link(capspad)
-    foreground.connect("pad-added", on_pad, id1)
-    background.connect("pad-added", on_pad, id0)
+    comp.connect("pad-added", on_pad, ident)
 
-    bin.add_pad(gst.GhostPad("src", caps2.get_pad("src")))
+    bin.add_pad(gst.GhostPad("src", caps.get_pad("src")))
 
-    print "foreground:"
-    print_gnlcomp(foreground)
-
-    print "background:"
-    print_gnlcomp(background)
+    print "composition:"
+    print_gnlcomp(comp)
     return bin, dict(duration=video_dur)
 
 def get_silence(config):
