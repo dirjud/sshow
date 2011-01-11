@@ -52,7 +52,6 @@ class SlideShowApp(object):
         gobject.idle_add(self.on_first)
 
     def on_first(self):
-        SlideShow.check_system()
         self.config = config = SlideShow.Config.Config()
         config.parse_argv()
         #SlideShow.check_system(config)
@@ -263,7 +262,7 @@ class SlideShowApp(object):
     def load_elements(self, filename):
         """Loads 'filename' as current pipeline"""
         elements = SlideShow.read_elements(filename, self.config)
-        info = SlideShow.initialize_pipeline(elements, self.config)
+        info = SlideShow.initialize_elements(elements, self.config)
         self.info = info
         self.elelist.clear()
         for element in elements:

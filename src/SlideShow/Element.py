@@ -98,59 +98,14 @@ class Element():
     def initialize(self):
         pass
 
-    def link(self, prev, next):
-        self.next=next
-        self.prev=prev
-
     def set_config(self, config):
         self.config = config
 
     def isa(self, type1):
         return issubclass(self.__class__, eval(type1))
 
-    def _find_background(self):
-        if issubclass(self.__class__, Background):
-            return self
-        elif(self.prev):
-            return self.prev._find_background()
-        else:
-            #raise Exception("Cannot find background")
-            # no background found, so return default black one
-            element = Background("generated", "background", 0, "", "#000000")
-            #element.create_slide(self.config)
-            return element
-
     def __str__(self):
         return self.name
-
-    def replace(self, element):
-        element.next = self.next
-        element.prev = self.prev
-        if(self.prev):
-            self.prev.next = element
-        if(self.next):
-            self.next.prev = element
-
-    def insert_after(self, element):
-        element.next = self.next
-        element.prev = self
-        if self.next:
-            self.next.prev = element
-        self.next = element
-
-    def insert_before(self, element):
-        element.prev = self.prev
-        element.next = self
-        if self.prev:
-            self.prev.next = element
-        self.prev = element
-
-    def remove(self):
-        if self.prev:
-            self.prev.next = self.next
-        if self.next:
-            self.next.prev = self.prev
-
 
 def encode(x):
     return x.replace(":","\:")
@@ -207,14 +162,15 @@ class Image(Element):
             x += ":" + fx
         return x
 
-    def get_bin(self, duration=None):
+    def get_bin(self, background, duration=None):
         if duration is None:
             duration = self.duration
+
         fx_names = [ x.name for x in self.effects ]
 
         bin = gst.Bin()
         elements = []
-        for name in [ "filesrc", "decodebin2", "ffmpegcolorspace", "capsfilter", "imagefreeze", "kenburns",  ]:
+        for name in [ "filesrc", "decodebin2", "ffmpegcolorspace", "capsfilter", "imagefreeze", "kenburns", ]:
             elements.append(gst.element_factory_make(name))
             exec("%s = elements[-1]" % name)
 
@@ -226,6 +182,7 @@ class Image(Element):
 
         caps = gst.element_factory_make("capsfilter")
         elements.append(caps)
+        
 
         filesrc.set_property("location",  self.filename)
         kenburns.set_property("duration", duration)
@@ -235,6 +192,14 @@ class Image(Element):
         bin.add(*elements)
         filesrc.link(decodebin2)
         gst.element_link_many(*elements[2:])
+
+        if 1:
+            mixer  = gst.element_factory_make("videomixer")
+            bg_bin = background.get_bin()
+            bin.add(mixer, bg_bin)
+            bg_bin.link(mixer)
+            elements[-1].link(mixer)
+            elements.append(mixer)
 
         if("kenburns" in fx_names):
             i = fx_names.index("kenburns")
@@ -317,7 +282,7 @@ class Image(Element):
         return (z, xcenter, ycenter)
 
 ################################################################################
-class Background(Image):
+class Background(Element):
     names = ['background',]
     colors = ['black','white','red','green','blue','orange','purple','yellow', 'cyan', 'magenta']
 
@@ -338,34 +303,35 @@ class Background(Image):
         x = "%s:%g:%s:%s" % (self.name, dur2flt(self.duration), self.subtitle, self.bg)
         return x
 
-    def initialize(self):
+    def set_prev_background(self, prev_background):
         if self.bg == "":
-            prev_bg = self.prev._find_background()
-            self.filename = prev_bg.filename
-            self.extension= prev_bg.extension
-            self.width = prev_bg.width
-            self.height= prev_bg.height
+            self.bg = prev_background
 
-        #elif os.path.exists(self.bg): # if effect is a background file
-        #    self.filename = crop_img(self.bg, self.extension, self.config)
-        else: ## use plain black background with no picture
-            r,g,b = get_rgb(self.bg)
-            self.filename = self.config["workdir"]+"/%02x%02x%02x.ppm" % (r,g,b)
-            self.extension="ppm"
-            print r,g,b,self.filename
-            self.width = self.config["width"]
-            self.height= self.config["height"]
-            f = open(self.filename, "w")
-            f.write("P6\n%d %d\n255\n" % (self.width, self.height))
-            import struct
-            f.write( struct.pack("BBB", r,g,b) * (self.width*self.height))
-            f.close()
-            #convert = "convert -size "+str(self.width)+'x'+str(self.height)+" xc:"+self.bg+" -type TrueColorMatte -depth 8 %s"
-            #self.filename = cmdif(None, self.config["workdir"], self.extension, convert)
+    def get_bin(self, background=None, duration=None):
+        if duration is None:
+            duration = self.duration
 
-#    def get_bin(self):
-        
+        if self.bg.__class__ is Background:
+            return self.bg.get_bin()
+        elif(os.path.exists(self.bg)):
+            return get_bg_image_bin(self)
+        elif(self.bg in Background.colors):
+            bgcolor = { "black":"#000000", "white":"#FFFFFF", "red":"#FF0000", "green":"#00FF00", "blue":"#0000FF", "orange":"#F37022", "purple":"#FF00FF", "yellow":"#FFFF00", "cyan":"#00FFFF", "magenta":"#FF00FF" }[self.bg]
+            return self.get_bg_color_bin(bgcolor)
+        elif(self.bg[0] == "#"):
+            return self.get_bg_color_bin(self.bg)
 
+    def get_bg_color_bin(self, bgcolor):
+        src  = gst.element_factory_make("videotestsrc")
+        src.props.pattern = "white"
+        src.props.foreground_color = get_color(bgcolor)
+        caps = gst.element_factory_make("capsfilter")
+        caps.props.caps = self.config.get_video_caps("AYUV")
+        bin = gst.Bin()
+        bin.add(src, caps)
+        src.link(caps)
+        bin.add_pad(gst.GhostPad("src", caps.get_pad("src")))
+        return bin        
 
 ################################################################################
 class Title(Element):
@@ -383,49 +349,20 @@ class Title(Element):
     def __str__(self):
         return "%s:%g:%s:%s" % (self.name, dur2flt(self.duration), self.title1, self.title2)
 
-#    def initialize(self):
-#        self.extension = "png"
-#        bg = self._find_background()
-#        fsize = self.config["title_font_size"]
-#        fcolor = self.config["title_font_color"]
-#
-#	if self.config["low_quality"] or self.config["vcd"] or self.config["output_format"] in ['flv', 'swf', 'mp4', 'mpg']:
-#            fsize = fsize * self.config["dvd_height"] / 480
-#            
-#	## if background is black & font color is black, change font to white
-#        if bg.bg == "black" and fcolor == 'black':
-#            fcolor='white'
-#        
-#        self.width = self.config["width"]*1
-#        self.height= self.config["height"]*1
-#
-#        convert = ("convert -size %dx%d xc:transparent -fill '%s' -pointsize %s -gravity Center -font %s -annotate 0 '%s' -type TrueColorMatte -depth 9 miff:- | composite -compose src-over -type TrueColorMatte -depth 8 - %s" % (self.width, self.height, fcolor, fsize, self.config["title_font"], self.title1.replace("'","'\"'\"'"), bg.filename)).replace("%", "%%") + " %s"
-#        
-#        self.filename = cmdif(bg.filename, self.config["workdir"], self.extension, convert)
-
-    def get_bin(self, duration=None):
+    def get_bin(self, background, duration=None):
         if duration is None:
             duration = self.duration
+        bg_bin = background.get_bin()
 
-        bin = gst.Bin()
-        elements = []
-        for name in [ "videotestsrc", "capsfilter", "alpha", "textoverlay", ]:
-            elements.append(gst.element_factory_make(name))
-            exec("%s = elements[-1]" % name)
-
-        caps2 = gst.element_factory_make("capsfilter")
-        elements.append(caps2)
-
+        textoverlay = gst.element_factory_make("textoverlay")
         Annotate.parse_annotate_params(self, textoverlay, "text=%s;ypos=0.5;xpos=0.5" % self.title1, duration)
-
-        videotestsrc.set_property("pattern", "black")
-        capsfilter.set_property("caps", gst.Caps("video/x-raw-yuv,format=(fourcc)AYUV"))
-        alpha.set_property("alpha", 0.0)
-        caps2.set_property("caps", self.config.get_video_caps("AYUV"))
+        caps        = gst.element_factory_make("capsfilter")
+        caps.set_property("caps", self.config.get_video_caps("AYUV"))
     
-        bin.add(*elements)
-        gst.element_link_many(*elements)
-        bin.add_pad(gst.GhostPad("src", elements[-1].get_pad("src")))
+        bin = gst.Bin()
+        bin.add(bg_bin, textoverlay, caps)
+        gst.element_link_many(bg_bin, textoverlay, caps)
+        bin.add_pad(gst.GhostPad("src", caps.get_pad("src")))
         return bin
         
 
@@ -502,7 +439,7 @@ class Audio(Element):
             elements.append(gst.element_factory_make(name, name))
             exec("%s = elements[-1]" % name)
     
-        capsfilter.props.caps = self.config["audio_caps"]
+        capsfilter.props.caps = self.config.get_audio_caps()
         filesrc.set_property("location",  self.filename)
         bin.add(*elements)
         filesrc.link(decodebin2)

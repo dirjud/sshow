@@ -11,18 +11,20 @@ def get_alpha_transition(config, element="alpha"):
     time (saves some processing time).
     """
     bin = gst.Bin()
+    alpha1 = gst.element_factory_make("alpha", "alpha1")
     alpha2 = gst.element_factory_make(element,  "alpha2")
     mixer  = gst.element_factory_make("videomixer")
     #color  = gst.element_factory_make("ffmpegcolorspace")
     caps   = gst.element_factory_make("capsfilter")
     caps.props.caps = config.get_video_caps("AYUV")
 
-    bin.add(alpha2, mixer, caps)
+    bin.add(alpha1, alpha2, mixer, caps)
+    alpha1.get_pad("src").link(mixer.get_pad("sink_0"))
     alpha2.get_pad("src").link(mixer.get_pad("sink_1"))
     mixer.link(caps)
     #color.link(caps)
 
-    bin.add_pad(gst.GhostPad("sink1", mixer.get_pad("sink_0")))
+    bin.add_pad(gst.GhostPad("sink1", alpha1.get_pad("sink")))
     bin.add_pad(gst.GhostPad("sink2", alpha2.get_pad("sink")))
     bin.add_pad(gst.GhostPad("src",   caps.get_pad("src")))
 

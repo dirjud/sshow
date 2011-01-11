@@ -176,9 +176,7 @@ class Preview(object):
             button.set_sensitive(True) 
         self.slider.set_sensitive(True)
 
-        print "update gui state", time.time()
         state = self.get_state()
-        print "2"
         if(state in [ gst.STATE_NULL,  gst.STATE_READY ]):
             self.pipeline.set_state(gst.STATE_PAUSED)
             state = self.get_state()
@@ -262,7 +260,7 @@ class PreviewApp(object):
 
     def load(self, filename=None):
         self.preview.stop()
-        self.config, elements, self.frontend = SlideShow.get_config_to_frontend(filename)
+        self.config, self.elements, self.frontend = SlideShow.get_config_to_frontend(filename)
         if self.config.has_key("input_txtfile"):
             self.input_txtfile = self.config["input_txtfile"]
         self.preview.set_frontend(self.frontend, self.config)

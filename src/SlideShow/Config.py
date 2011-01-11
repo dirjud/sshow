@@ -159,6 +159,11 @@ class Config(dict):
         caps = self["video_caps"] + ",format=(fourcc)"+fourcc
         return gst.Caps(caps)
 
+    def get_audio_caps(self):
+        """returns a gst.Caps with the configured caps. Set the fourcc 
+        argument to specify a desired format, otherwise leave it None"""
+        return gst.Caps(self["audio_caps"])
+
     def parse_argv(self):
         """Updates this config with variables passed on the command line"""
 

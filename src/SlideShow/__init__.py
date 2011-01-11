@@ -8,21 +8,6 @@ def cmd(x):
     p = subprocess.Popen(x, shell=True, stdout=subprocess.PIPE)
     return p.stdout.read()[:-1] # chop off final carriage return
 
-def check_system():
-    #checkforprog convert
-    progver=cmd("convert -help | head -n 1 | awk '{ print $3 }'")
-    log.debug("Found ImageMagick version " + progver)
-    it=cmd("which convert 2> /dev/null")
-    if not(it): # no convert
-        raise Exception("ERROR:  no ImageMagick found for audio processing. You need to download and install ImageMagick. http://ImageMagick.sourceforge.net")
-    
-    # #checkforprog dvdauthor
-    # progver=cmd("dvdauthor -h 2>&1 | head -n 1 | awk '{ print $3 }'")
-    # log.debug("Found dvdauthor version " + progver)
-    # it=cmd("which dvdauthor 2> /dev/null")
-    # if not(it): # no dvdauthor
-    #     raise Exception("ERROR:  no dvdauthor found for audio processing. You need to download and install dvdauthor. http://dvdauthor.sourceforge.net")
-
 def read_elements(filename, config):
     if not(os.path.exists(filename)):
         raise Exception(filename + " file cannot be opened.")
@@ -74,72 +59,63 @@ def set_font(config, name):
 
 ################################################################################
 def isSlide(element):
-    return (element.isa("Image") and element.duration > 0) or element.isa("Title")
+    return element.isa("Image") or (element.isa("Background") and element.duration > 0) or element.isa("Title")
 
-def nextSlide(pos, pipeline):
-    for element in pipeline[pos+1:]:
+def nextSlide(pos, elements):
+    for element in elements[pos+1:]:
         if isSlide(element):
             return element
     raise Exception("No next slide")
 
-def prevSlide(pos, pipeline):
-    reverse_pipe = pipeline[:pos]
-    reverse_pipe.reverse()
-    for element in reverse_pipe:
+def prevSlide(pos, elements):
+    for element in reversed(elements[:pos]):
         if isSlide(element):
             return element
     raise Exception("No prev slide")
 
-def find_prev_slide(element):
-    if element.prev:
-        if isSlide(element.prev):
-            return element.prev
-        else:
-            return find_prev_slide(element.prev)
-    else:
-        return None
-
-def find_prev_transition(element):
-    """Walks the pipeline backward starting with element until it
+def find_prev_transition(pos, elements):
+    """Walks the elements backward starting with element until it
     finds a transition or another slide. If it finds a transition, it
     returns the transition element. If it reaches the beginning or a
     slide, it returns None. This is useful for finding a transition
     between two slides (if one exists)."""
-    if element.prev:
-        if element.prev.isa("Transition"):
-            return element.prev
-        elif isSlide(element.prev):
+    if pos > 0:
+        prev = elements[pos-1]
+        if prev.isa("Transition"):
+            return prev
+        elif isSlide(prev):
             return None
         else:
-            return find_next_transition(element.prev)
+            return find_prev_transition(pos-1, elements)
     else:
         return None
 
-def find_next_transition(element):
-    """Walks the pipeline forward starting with element until it
+def find_next_transition(pos, elements):
+    """Walks the elements forward starting with element until it
     finds a transition or another slide. If it finds a transition, it
     returns the transition element. If it reaches the end or a
     slide, it returns None. This is useful for finding a transition
     between two slides (if one exists)."""
-    if element.next:
-        if element.next.isa("Transition"):
-            return element.next
-        elif isSlide(element.next):
+    if pos+1 < len(elements):
+        next = elements[pos+1]
+        if next.isa("Transition"):
+            return next
+        elif isSlide(next):
             return None
         else:
-            return find_next_transition(element.next)
+            return find_next_transition(pos+1, elements)
     else:
         return None
 
-def isNextTransition(pos, pipeline):
-    for element in pipeline[pos+1:]:
+def isNextTransition(pos, elements):
+    for element in elements[pos+1:]:
         if isSlide(element):
             return False
         elif element.isa("Transition"):
             return True
     return False
 
-def initialize_pipeline(pipeline, config):
+def initialize_elements(elements, config):
 
     config["default_font"] = "Helvetica-Bold" # start with ImageMagick font and then see if other fonts are available.
     for font_name in config["default_fonts"]:
@@ -323,7 +299,7 @@ def initialize_pipeline(pipeline, config):
     video_duration = 0
     prev_element = None
     video_element_count  = 0
-    for pos, element in enumerate(pipeline):
+    for pos, element in enumerate(elements):
         if element.isa("Audio"):
             try:
                 audio_index[element.track] += 1
@@ -332,14 +308,12 @@ def initialize_pipeline(pipeline, config):
             element.index = audio_index[element.track]
             
         try:
-            next_element = pipeline[pos+1]
+            next_element = elements[pos+1]
         except:
             next_element = None
 
-        element.link(prev_element, next_element)
-        element.set_config(config)
-
         try:
+            element.set_config(config)
             element.initialize()
         except Exception, e:
             raise
@@ -356,28 +330,28 @@ def initialize_pipeline(pipeline, config):
         try:
             if element.isa("Transition") and element.name == 'fadein':
                 try:
-                    nextSlide(pos, pipeline)
+                    nextSlide(pos, elements)
                 except:
                     raise Exception("no next slide found to fadein to!")
-                if isNextTransition(pos, pipeline):
+                if isNextTransition(pos, elements):
                     raise Exception("Cannot fadein to another transition!")
             elif element.isa("Transition") and element.name in [ 'crossfade', 'wipe' ]:
                 try:
-                    next_slide = nextSlide(pos, pipeline)
+                    next_slide = nextSlide(pos, elements)
                 except:
                     raise Exception("No next slide to "+element.name+" to!")
                 try:
-                    prev_slide = prevSlide(pos, pipeline)
+                    prev_slide = prevSlide(pos, elements)
                 except:
                     raise Exception("No previous slide to "+element.name+" to!")
-                if isNextTransition(pos, pipeline):
+                if isNextTransition(pos, elements):
                     raise Exception("Cannot "+element.name+" to another transition!")
             elif element.isa("Transition") and element.name == 'fadeout':
                 try:
-                    prevSlide(pos, pipeline)
+                    prevSlide(pos, elements)
                 except:
                     raise Exception("no prevision slide to fadeout from!")
-                if isNextTransition(pos, pipeline):
+                if isNextTransition(pos, elements):
                     raise Exception("Cannot fadeout to another transition")
     
         except Exception, e:
@@ -394,47 +368,37 @@ def print_gnlcomp(comp):
 
 def get_video_bin(elements, config):
     comp = gst.element_factory_make("gnlcomposition", "composition")
+    
+    # generate the default background in the event one is not supplied
+    background = Element.Background("generated", "background", 0, "", "black")
+    background.set_config(config)
+    background.initialize()
 
-    prev_bg_src = None
     fg_start_time = 0
     bg_start_time = 0
-    priority      = 2 # background tracks get priority 1. mixer get priority 0.
-    for i, element in enumerate(elements):
+    priority      = 1 # background tracks get priority 1. mixer get priority 0.
+    for pos, element in enumerate(elements):
 
         if element.__class__ == Element.Background:
-            bg_dur = fg_start_time - bg_start_time
-            bg_start_time = fg_start_time
-            dur = element.duration
-            src = gst.element_factory_make("gnlsource", "bg"+str(i)+"_"+element.name)
-            src.add(element.get_bin(duration=1))
-            src.props.start          = bg_start_time
-            src.props.media_start    = 0
-            src.props.priority       = 1
-            comp.add(src)
+            element.set_prev_background(background)
+            background = element
 
-            if prev_bg_src:
-                prev_bg_src.props.duration       = bg_dur
-                prev_bg_src.props.media_duration = bg_dur
-            
-            prev_bg_src   = src
-            fg_start_time += element.duration
-
-        elif isSlide(element):
+        if isSlide(element):
             dur = element.duration
 
-            prev_transition = find_prev_transition(element)
+            prev_transition = find_prev_transition(pos, elements)
             if(prev_transition):
                 dur += prev_transition.duration/2
                 prev_dur = prev_transition.duration/2
             else:
                 prev_dur = 0
 
-            next_transition = find_next_transition(element)
+            next_transition = find_next_transition(pos, elements)
             if(next_transition):
                 dur += next_transition.duration/2
 
-            src = gst.element_factory_make("gnlsource", "fg"+str(i)+"_"+element.name)
-            src.add(element.get_bin(dur))
+            src = gst.element_factory_make("gnlsource", "fg%03d_" % pos + element.name)
+            src.add(element.get_bin(background, dur))
             src.props.start          = fg_start_time - prev_dur
             src.props.duration       = dur
             src.props.media_start    = 0
@@ -445,31 +409,20 @@ def get_video_bin(elements, config):
             priority   += 1
             fg_start_time += element.duration
 
-#        elif element.__class__ == Element.Transition:
-#            dur = element.duration
-
-    # fill the duration of last background element
-    bg_dur = fg_start_time - bg_start_time
-    if prev_bg_src:
-        prev_bg_src.props.duration       = bg_dur
-        prev_bg_src.props.media_duration = bg_dur
+        elif element.__class__ == Element.Transition:
+            dur = element.duration
+        
+            op = gst.element_factory_make("gnloperation", "tr%03d_" % pos + element.name)
+            op.add(element.get_bin())
+            op.props.start          = fg_start_time - dur/2
+            op.props.duration       = dur
+            op.props.media_start    = 0
+            op.props.media_duration = dur
+            op.props.priority       = 0
+            comp.add(op)
 
     video_dur = fg_start_time
         
-    op = gst.element_factory_make("gnloperation", "mixer")
-    mixer = gst.element_factory_make("videomixer")
-    #mixer.props.background = "black"
-    op.add(mixer)
-    op.props.start          = 0
-    op.props.duration       = video_dur
-    op.props.media_start    = 0
-    op.props.media_duration = video_dur
-    op.props.priority        = 0
-    comp.add(op)
-
-
-
-
     bin = gst.Bin()
     ident   = gst.element_factory_make("identity")
     ident.props.single_segment = 1
@@ -570,8 +523,8 @@ def get_frontend(elements, config):
 
     video_caps = gst.element_factory_make("capsfilter")
     audio_caps = gst.element_factory_make("capsfilter")
-    video_caps.props.caps = gst.Caps(config["video_caps"])
-    audio_caps.props.caps = gst.Caps(config["audio_caps"])
+    video_caps.props.caps = config.get_video_caps("I420")
+    audio_caps.props.caps = config.get_audio_caps()
 
     frontend = gst.Bin("frontend")
     frontend.add(video_bin, audio_comp, video_caps, audio_caps)
@@ -613,6 +566,7 @@ def get_encoder_backend(config):
     backend = gst.Bin("backend")
     
     video_caps  = gst.element_factory_make("capsfilter")
+    video_caps.props.caps = config.get_video_caps("I420")
     video_ident = gst.element_factory_make("identity")
     video_ident.props.single_segment = 1
     if 0:
@@ -630,6 +584,7 @@ def get_encoder_backend(config):
         mux = gst.element_factory_make("mplex", "mux")
 
     audio_caps  = gst.element_factory_make("capsfilter")
+    audio_caps.props.caps = config.get_audio_caps()
     audio_ident = gst.element_factory_make("identity")
     audio_ident.props.single_segment = 1
     audio_enc = gst.element_factory_make("lamemp3enc", "audio_enc")
@@ -689,7 +644,6 @@ def stop(pipeline):
 
 
 def get_config_to_frontend(input_txtfile=None):
-    check_system()
     config = Config.Config()
     config.parse_argv()
         
@@ -700,7 +654,7 @@ def get_config_to_frontend(input_txtfile=None):
         return config, None, None
         
     elements = read_elements(config["input_txtfile"], config)
-    initialize_pipeline(elements, config)
+    initialize_elements(elements, config)
     frontend = get_frontend(elements, config)
 
     return config, elements, frontend
