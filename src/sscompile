@@ -38,7 +38,8 @@ class Progress(threading.Thread):
     
         while self.loop.is_running():
             pos = SlideShow.query_position(self.pipeline)
-            self.print_status(N, pos, dur)
+            if(pos > 0):
+                self.print_status(N, pos, dur)
             time.sleep(1.0)
         sys.stdout.write("\n")
         sys.stdout.flush()

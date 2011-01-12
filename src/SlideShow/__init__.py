@@ -278,7 +278,7 @@ def initialize_elements(elements, config):
     config["width"]  = width
     config["height"] = height
 
-    config["audio_caps"] = "audio/x-raw-int, endianness=(int)1234, signed=(boolean)true, width=(int)16, depth=(int)16, rate=(int)44100"
+    config["audio_caps"] = "audio/x-raw-int, endianness=(int)1234, signed=(boolean)true, width=(int)16, depth=(int)16, rate=(int)44100, channels=2"
 
     if config.has_key("output_size"):
 	# used user-set size, instead of defaults!
@@ -358,8 +358,6 @@ def initialize_elements(elements, config):
             raise
             raise Exception("%s: %s" % (element.location, str(e)))
 
-    #print "Audio Duration:", audio_duration
-    #print "Video Duration:", video_duration
     return dict(audio_duration=audio_duration, video_duration=video_duration, video_element_count=video_element_count)
 
 def print_gnlcomp(comp):
@@ -424,54 +422,54 @@ def get_video_bin(elements, config):
     video_dur = fg_start_time
         
     bin = gst.Bin()
-    ident   = gst.element_factory_make("identity")
-    ident.props.single_segment = 1
     color = gst.element_factory_make("ffmpegcolorspace")
     caps = gst.element_factory_make("capsfilter")
     caps.props.caps = config.get_video_caps("I420")
-    bin.add(comp, ident, color, caps)
-    gst.element_link_many(ident, color, caps)
-
-    def on_pad(comp, pad, element):
-        capspad = element.get_pad("sink")
-        pad.link(capspad)
-    comp.connect("pad-added", on_pad, ident)
+    bin.add(comp, color, caps)
+    gst.element_link_many(color, caps)
 
     bin.add_pad(gst.GhostPad("src", caps.get_pad("src")))
+    def on_pad(comp, pad, element):
+        capspad = element.get_compatible_pad(pad, pad.get_caps())
+        pad.link(capspad)
+    comp.connect("pad-added", on_pad, color)
 
-    print "composition:"
+    print "Video Composition:"
     print_gnlcomp(comp)
-    return bin, dict(duration=video_dur)
 
-def get_silence(config):
-    #bin = gst.Bin()
+    return bin, dict(duration=video_dur, composition=comp, bin=bin)
+
+def get_silence(config, duration):
+    import math
+    bin = gst.Bin()
     silence = gst.element_factory_make("audiotestsrc")
     silence.props.wave=4 # silence
     silence.props.volume=0.0
-    #caps    = gst.element_factory_make("capsfilter")
-    #caps.props.caps = gst.Caps(config["audio_caps"])
-    #bin.add(silence, caps)
-    #silence.link(caps)
-    #bin.add_pad(gst.GhostPad("src", caps.get_pad("src")))
-    #return bin
-    return silence
+    convert = gst.element_factory_make("audioconvert")
+    caps    = gst.element_factory_make("capsfilter")
+    caps.props.caps = config.get_audio_caps()
+    bin.add(silence, convert, caps)
+    silence.link(convert)
+    convert.link(caps)
+    bin.add_pad(gst.GhostPad("video_src", caps.get_pad("src")))
+    return bin
 
-def get_audio_composition(elements, config, video_info):
+def get_audio_bin(elements, config, info):
     comp = gst.element_factory_make("gnlcomposition", "audio_composition")
-    #comp = video_info["composition"]
+    #comp = info["composition"]
 
     start_time = 0
-    priority   = 1
+    priority   = 2
     done = False
     for element in elements:
         if element.__class__ == Element.Audio:
             dur = element.duration
 
             # pull the song back in time based on any fadein requests
-            start_time = max(0, start_time-element.fadein)
+            new_start_time = max(0, start_time-element.fadein)
 
-            if(start_time + dur > video_info["duration"]):
-                dur = video_info["duration"] - start_time
+            if(start_time + dur > info["duration"]):
+                dur = info["duration"] - start_time
                 done = True
 
             src = gst.element_factory_make("gnlsource")
@@ -487,13 +485,14 @@ def get_audio_composition(elements, config, video_info):
             start_time += dur
             if done:
                 break
-
-    # fill any remaining time with silence
-    if(start_time < video_info["duration"]):
-        dur = video_info["duration"] - start_time
-        print "creating ", dur, " silence at time ", start_time
-        src = gst.element_factory_make("gnlsource")
-        silence = get_silence(config)
+    
+    audio_dur = info["duration"]
+    
+    # fill audio with silence if necessary
+    if(start_time < audio_dur):
+        dur = audio_dur - start_time
+        src = gst.element_factory_make("gnlsource", "silence")
+        silence = get_silence(config, audio_dur)
         src.add(silence)
         src.props.start          = start_time
         src.props.duration       = dur
@@ -501,25 +500,39 @@ def get_audio_composition(elements, config, video_info):
         src.props.media_duration = dur
         src.props.priority       = priority
         comp.add(src)
-        start_time += dur
-        
-    # Add an audio mixer to mix any fades
-    op = gst.element_factory_make("gnloperation")
-    op.add(gst.element_factory_make("adder"))
-    op.props.start          = 0
-    op.props.duration       = start_time
-    op.props.media_start    = 0
-    op.props.media_duration = start_time
-    op.props.priority       = 0
-    comp.add(op)
-    
-    return comp, dict(duration=start_time)
+
+    # add an audio adder to sum all overlapping tracks
+    if(new_start_time != start_time):
+        transition_dur = start_time - new_start_time
+        op = gst.element_factory_make("gnloperation", "audio_adder")
+        op.add(gst.element_factory_make("adder"))
+        op.props.start          = new_start_time
+        op.props.duration       = transition_dur
+        op.props.media_start    = 0
+        op.props.media_duration = transition_dur
+        op.props.priority       = 0
+        comp.add(op)
+        start_time = new_start_time
+
+    bin = gst.Bin()
+    caps  = gst.element_factory_make("capsfilter")
+    caps.props.caps = config.get_audio_caps()
+    bin.add(comp, caps)
+    bin.add_pad(gst.GhostPad("audio_src", caps.get_pad("src")))
+
+    def on_pad(comp, pad, element):
+        capspad = element.get_compatible_pad(pad, pad.get_caps())
+        pad.link(capspad)
+    comp.connect("pad-added", on_pad, caps)
+
+    print "Audio Composition:"
+    print_gnlcomp(comp)
+
+    return bin
 
 def get_frontend(elements, config):
-    video_bin,  video_info = get_video_bin(elements, config)
-    audio_comp, audio_info = get_audio_composition(elements, config, video_info)
-    #print "video_info", video_info
-    #print "audio_info", audio_info
+    video_bin, info = get_video_bin(elements, config)
+    audio_bin = get_audio_bin(elements, config, info)
 
     video_caps = gst.element_factory_make("capsfilter")
     audio_caps = gst.element_factory_make("capsfilter")
@@ -527,22 +540,13 @@ def get_frontend(elements, config):
     audio_caps.props.caps = config.get_audio_caps()
 
     frontend = gst.Bin("frontend")
-    frontend.add(video_bin, audio_comp, video_caps, audio_caps)
+    frontend.add(video_bin, audio_bin, video_caps, audio_caps)
 
-    def on_pad(comp, pad, caps):
-        capspad = caps.get_compatible_pad(pad, pad.get_caps())
-        if capspad:
-            pad.link(capspad)
-        else:
-            print "pad caps", str(pad.get_caps())
-            raise Exception("Cannot find capabilible pads")
-    #video_comp.connect("pad-added", on_pad, video_caps)
     video_bin.link(video_caps)
-    audio_comp.connect("pad-added", on_pad, audio_caps)
+    audio_bin.link(audio_caps)
     frontend.add_pad(gst.GhostPad("video_src", video_caps.get_pad("src")))
     frontend.add_pad(gst.GhostPad("audio_src", audio_caps.get_pad("src")))
     return frontend
-
 
 def get_encoder_backend(config):
 
@@ -564,11 +568,13 @@ def get_encoder_backend(config):
 #        encoder_cmd = "mpeg2enc "+config["mpeg2enc_params"]+" -o "+config["workdir"]+"/video.mpg -" # < "$workdir"/$yuvfifo >> "$outdir/$logfile" 2>&1 & 
     
     backend = gst.Bin("backend")
-    
-    video_caps  = gst.element_factory_make("capsfilter")
-    video_caps.props.caps = config.get_video_caps("I420")
+    video_queue = gst.element_factory_make("queue")
+    audio_queue = gst.element_factory_make("queue")
     video_ident = gst.element_factory_make("identity")
+    audio_ident = gst.element_factory_make("identity")
+    audio_ident.props.single_segment = 1
     video_ident.props.single_segment = 1
+
     if 0:
         video_enc = gst.element_factory_make("ffenc_mpeg4", "encoder")
         video_enc.props.bitrate = config["video_bitrate"] * 1000
@@ -583,21 +589,16 @@ def get_encoder_backend(config):
         video_enc.props.bitrate = config["video_bitrate"]
         mux = gst.element_factory_make("mplex", "mux")
 
-    audio_caps  = gst.element_factory_make("capsfilter")
-    audio_caps.props.caps = config.get_audio_caps()
-    audio_ident = gst.element_factory_make("identity")
-    audio_ident.props.single_segment = 1
     audio_enc = gst.element_factory_make("lamemp3enc", "audio_enc")
 
     sink      = gst.element_factory_make("filesink", "sink")
     sink.set_property("location", config["outdir"]+"/"+config["slideshow_name"]+".mp4")
 
-    backend.add(video_caps, video_ident, video_enc, audio_caps, audio_ident, audio_enc, mux, sink)
-    gst.element_link_many(video_caps, video_ident, video_enc, mux)
-    gst.element_link_many(audio_caps, audio_ident, audio_enc, mux)
-    mux.link(sink)
-    backend.add_pad(gst.GhostPad("video_sink", video_caps.get_pad("sink")))
-    backend.add_pad(gst.GhostPad("audio_sink", audio_caps.get_pad("sink")))
+    backend.add(video_queue, video_ident, video_enc, audio_queue, audio_ident, audio_enc, mux, sink)
+    gst.element_link_many(video_ident, video_enc, video_queue, mux)
+    gst.element_link_many(audio_ident, audio_enc, audio_queue, mux, sink)
+    backend.add_pad(gst.GhostPad("video_sink", video_ident.get_pad("sink")))
+    backend.add_pad(gst.GhostPad("audio_sink", audio_ident.get_pad("sink")))
     return backend
 
 def get_preview_backend(config):
