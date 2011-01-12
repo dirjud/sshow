@@ -300,7 +300,11 @@ class Background(Element):
              raise Exception("Unknown background specified. Must be a file or color")
 
     def __str__(self):
-        x = "%s:%g:%s:%s" % (self.name, dur2flt(self.duration), self.subtitle, self.bg)
+        if self.bg.__class__ is Background:
+            bg = ""
+        else:
+            bg = self.bg
+        x = "%s:%g:%s:%s" % (self.name, dur2flt(self.duration), self.subtitle, bg)
         return x
 
     def set_prev_background(self, prev_background):

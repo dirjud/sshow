@@ -276,11 +276,25 @@
                 <property name="position">250</property>
                 <property name="position_set">True</property>
                 <child>
-                  <object class="GtkVBox" id="previewbox">
+                  <object class="GtkFrame" id="frame1">
                     <property name="visible">True</property>
-                    <property name="orientation">vertical</property>
+                    <property name="label_xalign">0</property>
+                    <property name="shadow_type">none</property>
                     <child>
-                      <placeholder/>
+                      <object class="GtkVBox" id="previewbox">
+                        <property name="visible">True</property>
+                        <property name="orientation">vertical</property>
+                        <child>
+                          <placeholder/>
+                        </child>
+                      </object>
+                    </child>
+                    <child type="label">
+                      <object class="GtkLabel" id="label3">
+                        <property name="visible">True</property>
+                        <property name="label" translatable="yes">&lt;b&gt;Preview&lt;/b&gt;</property>
+                        <property name="use_markup">True</property>
+                      </object>
                     </child>
                   </object>
                   <packing>

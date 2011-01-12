@@ -269,7 +269,7 @@ def initialize_elements(elements, config):
 
     
     framerate_numer = 30000 #int(round(config["framerate"] * 100))
-    framerate_denom = 1001
+    framerate_denom = 1000 # 1001
     config["framerate"] = framerate_numer / float(framerate_denom)
 
     height = config["dvd_height"]
@@ -316,7 +316,7 @@ def initialize_elements(elements, config):
             element.set_config(config)
             element.initialize()
         except Exception, e:
-            raise
+            #raise
             raise Exception("%s: %s" % (element.location, str(e)))
     
         prev_element = element
@@ -569,7 +569,13 @@ def get_encoder_backend(config):
     
     backend = gst.Bin("backend")
     video_queue = gst.element_factory_make("queue")
+    video_queue.props.max_size_time = 10 * gst.SECOND
+    video_queue.props.max_size_bytes   = 0
+    video_queue.props.max_size_buffers = 0
     audio_queue = gst.element_factory_make("queue")
+    audio_queue.props.max_size_time = 10 * gst.SECOND
+    audio_queue.props.max_size_bytes   = 0
+    audio_queue.props.max_size_buffers = 0
     video_ident = gst.element_factory_make("identity")
     audio_ident = gst.element_factory_make("identity")
     audio_ident.props.single_segment = 1
@@ -604,17 +610,22 @@ def get_encoder_backend(config):
 def get_preview_backend(config):
     backend = gst.Bin("backend")
     video_queue = gst.element_factory_make("queue")
-    audio_volume = gst.element_factory_make("volume","volume")
+    video_queue.props.max_size_time = 10 * gst.SECOND
+    video_queue.props.max_size_bytes   = 0
+    video_queue.props.max_size_buffers = 0
+    #audio_volume = gst.element_factory_make("volume","volume")
     audio_queue = gst.element_factory_make("queue")
+    audio_queue.props.max_size_time = 10 * gst.SECOND
+    audio_queue.props.max_size_bytes   = 0
+    audio_queue.props.max_size_buffers = 0
     video_sink  = gst.element_factory_make("autovideosink")
     audio_sink  = gst.element_factory_make("autoaudiosink")
 
-    backend.add(video_queue, audio_volume, audio_queue, video_sink, audio_sink)
+    backend.add(video_queue, audio_queue, video_sink, audio_sink)
     video_queue.link(video_sink)
-    audio_volume.link(audio_queue)
     audio_queue.link(audio_sink)
     backend.add_pad(gst.GhostPad("video_sink", video_queue.get_pad("sink")))
-    backend.add_pad(gst.GhostPad("audio_sink", audio_volume.get_pad("sink")))
+    backend.add_pad(gst.GhostPad("audio_sink", audio_queue.get_pad("sink")))
     return backend
 
 def get_gst_pipeline(frontend, backend):

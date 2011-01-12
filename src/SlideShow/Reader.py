@@ -62,8 +62,8 @@ class DVDSlideshow():
             try:
                 pipeline.append(DVDSlideshow.parse_line(line, config, location))
             except Exception, e:
-                raise
-                #raise Exception("%s: %s" % (location, str(e)))
+                #raise
+                raise Exception("%s: %s" % (location, str(e)))
         f.close()
 
     @staticmethod
