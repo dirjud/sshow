@@ -4,48 +4,6 @@ import transition, Annotate
 
 log = logging.getLogger(__name__)
 
-unique = 0
-def get_unique():
-    global unique
-    unique += 1
-    return "%05d" % unique
-
-def cmd(x):
-    log.debug("cmd: " + x)
-    p = subprocess.Popen(x, shell=True, stdout=subprocess.PIPE)
-    return p.stdout.read()[:-1] # chop off final carriage return
-
-
-def cmdif(src, outdir, extension, command):
-    """runs the command based on 'src' file if necessary. Returns the
-    filename of the generated file. The 'cmd' should contain a single
-    %s that will be used as the substitution pattern of the output
-    file. The output file name is generated as the sha1 of the
-    'command' and then substituted into the command and run as
-    necessary. 'src' is the file that is used to generate the output
-    file. Its date is compared against the destination to see if it
-    needs run.  Set 'src' to None if there is no source file."""
-
-    sha1 = hashlib.sha1(command).hexdigest()
-    if src is None:
-        src_date = 0
-    else:
-        src_date = 0
-        if type(src) in [list, tuple]:
-            for s in src:
-                src_date = max(os.path.getmtime(s), src_date)
-        else:
-            src_date = os.path.getmtime(src)
-    dest = outdir + "/" + sha1 + "." + extension
-    if(os.path.exists(dest)):
-        dest_date = os.path.getmtime(dest)
-        if(src_date < dest_date):
-            log.debug("NOT RECREATING "+dest)
-            log.debug(command)
-            return dest
-    cmd(command % dest)
-    return dest
-            
 def get_rgb(x):
     a = r = g = b = 0xFF
     
@@ -64,13 +22,14 @@ def get_color(x):
         b = int(x[5:7],16)
     else:
         raise Exception("Unknown color '%s'" % (str(x)))
-    
     return (a << 24) | (r << 16) | (g << 8) | b
-    #import struct
-    #return int(struct.pack(">BBBB", a,r,g,b))
 
 def get_dims(img_file):
-    return map(int, cmd('identify -format "%w %h" '+img_file).split())
+    d = gst.parse_launch("filesrc location="+img_file+" ! decodebin2 name=decoder ! fakesink")
+    d.set_state(gst.STATE_PLAYING)
+    d.get_state() # blocks until state transition has finished
+    caps = d.get_by_name("decoder").src_pads().next().get_caps()[0]
+    return caps["width"], caps["height"]
 
 def get_duration(filename):
     d = gst.parse_launch("filesrc location="+filename+" ! decodebin2 ! fakesink")
@@ -88,7 +47,6 @@ class Effect():
     def __init__(self, name, param):
         self.name = name
         self.param = param
-
 
 ################################################################################
 class Element():
@@ -437,6 +395,9 @@ class Audio(Element):
         self.duration = get_duration(self.filename)
 
     def get_bin(self, duration=None):
+        if self.filename == "silence":
+            return Audio.get_silence_bin(self.config)
+
         bin = gst.Bin()
         elements = []
         for name in [ "filesrc", "decodebin2", "audioconvert", "volume", "capsfilter",  ]:
@@ -470,6 +431,21 @@ class Audio(Element):
 
         decodebin2.connect("new-decoded-pad", on_pad, audioconvert)
         bin.add_pad(gst.GhostPad("src", capsfilter.get_pad("src")))
+        return bin
+
+    @staticmethod
+    def get_silence_bin(config):
+        bin = gst.Bin()
+        silence = gst.element_factory_make("audiotestsrc")
+        silence.props.wave=4 # silence
+        silence.props.volume=0.0
+        convert = gst.element_factory_make("audioconvert")
+        caps    = gst.element_factory_make("capsfilter")
+        caps.props.caps = config.get_audio_caps()
+        bin.add(silence, convert, caps)
+        silence.link(convert)
+        convert.link(caps)
+        bin.add_pad(gst.GhostPad("video_src", caps.get_pad("src")))
         return bin
 
     

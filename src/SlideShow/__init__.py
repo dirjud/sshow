@@ -1,7 +1,14 @@
-import Reader, Config
-import gst
 import logging, sys, os, subprocess
+import gst
+import Reader, Config
 log = logging.getLogger(__name__)
+
+def check_system():
+    for element in [ "gnlcomposition", "kenburns", "videomixer", "textoverlay", "imagefreeze", "alpha", ]:
+        if gst.element_factory_find(element) is None:
+            raise Exception("Gstreamer element '%s' is not installed. Please install the appropriate gstreamer plugin and try again." % (element,))
+
+check_system()
 
 def cmd(x):
     log.debug(x)
@@ -99,6 +106,22 @@ def find_next_transition(pos, elements):
     if pos+1 < len(elements):
         next = elements[pos+1]
         if next.isa("Transition"):
+            return next
+        elif isSlide(next):
+            return None
+        else:
+            return find_next_transition(pos+1, elements)
+    else:
+        return None
+
+def find_next_audio_element(pos, elements):
+    """Walks the elements forward starting with element until it finds
+    an audio element or another slide. If it finds an audio element,
+    it return the audio element. If it reaches the end or a slide, it
+    returns None."""
+    if pos+1 < len(elements):
+        next = elements[pos+1]
+        if next.isa("Audio"):
             return next
         elif isSlide(next):
             return None
@@ -372,9 +395,8 @@ def get_video_bin(elements, config):
     background.set_config(config)
     background.initialize()
 
-    fg_start_time = 0
-    bg_start_time = 0
-    priority      = 1 # background tracks get priority 1. mixer get priority 0.
+    start_time = 0
+    priority   = 1
     for pos, element in enumerate(elements):
 
         if element.__class__ == Element.Background:
@@ -397,7 +419,7 @@ def get_video_bin(elements, config):
 
             src = gst.element_factory_make("gnlsource", "fg%03d_" % pos + element.name)
             src.add(element.get_bin(background, dur))
-            src.props.start          = fg_start_time - prev_dur
+            src.props.start          = start_time - prev_dur
             src.props.duration       = dur
             src.props.media_start    = 0
             src.props.media_duration = dur
@@ -405,21 +427,21 @@ def get_video_bin(elements, config):
             comp.add(src)
 
             priority   += 1
-            fg_start_time += element.duration
+            start_time += element.duration
 
         elif element.__class__ == Element.Transition:
             dur = element.duration
         
             op = gst.element_factory_make("gnloperation", "tr%03d_" % pos + element.name)
             op.add(element.get_bin())
-            op.props.start          = fg_start_time - dur/2
+            op.props.start          = start_time - dur/2
             op.props.duration       = dur
             op.props.media_start    = 0
             op.props.media_duration = dur
             op.props.priority       = 0
             comp.add(op)
 
-    video_dur = fg_start_time
+    video_dur = start_time
         
     bin = gst.Bin()
     color = gst.element_factory_make("ffmpegcolorspace")
@@ -439,42 +461,25 @@ def get_video_bin(elements, config):
 
     return bin, dict(duration=video_dur, composition=comp, bin=bin)
 
-def get_silence(config, duration):
-    import math
-    bin = gst.Bin()
-    silence = gst.element_factory_make("audiotestsrc")
-    silence.props.wave=4 # silence
-    silence.props.volume=0.0
-    convert = gst.element_factory_make("audioconvert")
-    caps    = gst.element_factory_make("capsfilter")
-    caps.props.caps = config.get_audio_caps()
-    bin.add(silence, convert, caps)
-    silence.link(convert)
-    convert.link(caps)
-    bin.add_pad(gst.GhostPad("video_src", caps.get_pad("src")))
-    return bin
-
 def get_audio_bin(elements, config, info):
     comp = gst.element_factory_make("gnlcomposition", "audio_composition")
     #comp = info["composition"]
 
-    start_time = 0
+    video_time = 0
+    audio_time = 0
     priority   = 2
-    done = False
+    done       = False
     for element in elements:
         if element.__class__ == Element.Audio:
             dur = element.duration
 
-            # pull the song back in time based on any fadein requests
-            new_start_time = max(0, start_time-element.fadein)
-
-            if(start_time + dur > info["duration"]):
-                dur = info["duration"] - start_time
+            if(audio_time + dur > info["duration"]):
+                dur = info["duration"] - audio_time
                 done = True
 
             src = gst.element_factory_make("gnlsource")
             src.add(element.get_bin(dur))
-            src.props.start          = start_time
+            src.props.start          = audio_time
             src.props.duration       = dur
             src.props.media_start    = 0
             src.props.media_duration = dur
@@ -482,19 +487,21 @@ def get_audio_bin(elements, config, info):
             comp.add(src)
 
             priority   += 1
-            start_time += dur
+            audio_time += dur - element.fadeout #remove the fadeout time so the next clip starts when the fadeout starts
+
+            
             if done:
                 break
     
     audio_dur = info["duration"]
     
     # fill audio with silence if necessary
-    if(start_time < audio_dur):
-        dur = audio_dur - start_time
+    if(audio_time < audio_dur):
+        dur = audio_dur - audio_time
         src = gst.element_factory_make("gnlsource", "silence")
-        silence = get_silence(config, audio_dur)
+        silence = Element.Audio.get_silence_bin(config)
         src.add(silence)
-        src.props.start          = start_time
+        src.props.start          = audio_time
         src.props.duration       = dur
         src.props.media_start    = 0
         src.props.media_duration = dur
@@ -502,17 +509,14 @@ def get_audio_bin(elements, config, info):
         comp.add(src)
 
     # add an audio adder to sum all overlapping tracks
-    if(new_start_time != start_time):
-        transition_dur = start_time - new_start_time
-        op = gst.element_factory_make("gnloperation", "audio_adder")
-        op.add(gst.element_factory_make("adder"))
-        op.props.start          = new_start_time
-        op.props.duration       = transition_dur
-        op.props.media_start    = 0
-        op.props.media_duration = transition_dur
-        op.props.priority       = 0
-        comp.add(op)
-        start_time = new_start_time
+    op = gst.element_factory_make("gnloperation", "audio_adder")
+    op.add(gst.element_factory_make("adder"))
+    op.props.start          = 0
+    op.props.duration       = audio_dur
+    op.props.media_start    = 0
+    op.props.media_duration = audio_dur
+    op.props.priority       = 0
+    comp.add(op)
 
     bin = gst.Bin()
     caps  = gst.element_factory_make("capsfilter")
