@@ -155,6 +155,8 @@ class DVDSlideshow():
             return DVDSlideshow.getImage(location, element, extension, fields)
         elif element in Element.Silence.names:
             return DVDSlideshow.getSilence(location, element, fields)
+        elif element in Element.TestVideo.names:
+            return DVDSlideshow.getTestVideo(location, element, fields)
         elif extension in Element.Audio.extensions:
             return DVDSlideshow.getAudio(location, element, extension, fields)
         elif element in Element.Transition.names:
@@ -219,8 +221,7 @@ class DVDSlideshow():
         return Element.Transition(location, name, duration)
 
     @staticmethod
-    def getAudio(location, filename, extension, fields):
-        track = DVDSlideshow.pop(fields)
+    def parse_track(track):
         if(track == ""):
             track = 1
         else:
@@ -228,7 +229,11 @@ class DVDSlideshow():
                 track = int(track)
             except:
                 raise Exception("Track is not an integer")
+        return track
 
+    @staticmethod
+    def getAudio(location, filename, extension, fields):
+        track = DVDSlideshow.parse_track(DVDSlideshow.pop(fields))
         effects = []
         while fields:
             name = DVDSlideshow.pop(fields)
@@ -239,14 +244,22 @@ class DVDSlideshow():
 
     @staticmethod
     def getSilence(location, name, fields):
-        track = DVDSlideshow.pop(fields)
-        if(track == ""):
-            track = 1
-        else:
-            try:
-                track = int(track)
-            except:
-                raise Exception("Track is not an integer")
-
+        track = DVDSlideshow.parse_track(DVDSlideshow.pop(fields))
         return Element.Silence(location, name, track)
 
+    @staticmethod
+    def getTestVideo(location, name, fields):
+        duration = DVDSlideshow.parse_duration(DVDSlideshow.pop(fields),allow_zero=True)
+        keyvals = DVDSlideshow.parse_key_values(DVDSlideshow.pop(fields))
+        pattern = keyvals.get("pattern", "")
+        return Element.TestVideo(location, name, duration, pattern)
+
+    @staticmethod
+    def parse_key_values(field):
+        kvdict = {}
+        kvs = field.split(";")
+        for kv in kvs:
+            if kv:
+                key, value = map(str.strip, kv.split("=",1))
+                kvdict[key] = value
+        return kvdict

@@ -8,6 +8,13 @@ def check_system():
         if gst.element_factory_find(element) is None:
             raise Exception("Gstreamer element '%s' is not installed. Please install the appropriate gstreamer plugin and try again." % (element,))
 
+        try:
+            x = gst.element_factory_make("videotestsrc")
+            x.props.foreground_color
+        except AttributeError:
+            raise Exception("Your gstreamer version is too old. Install version 0.10.31 or newer.")
+            
+
 check_system()
 
 def cmd(x):
@@ -66,7 +73,7 @@ def set_font(config, name):
 
 ################################################################################
 def isSlide(element):
-    return element.isa("Image") or (element.isa("Background") and element.duration > 0) or element.isa("Title")
+    return element.isa("Image") or (element.isa("Background") and element.duration > 0) or element.isa("Title") or element.isa("TestVideo")
 
 def nextSlide(pos, elements):
     for element in elements[pos+1:]:
@@ -419,58 +426,62 @@ def get_video_bin(elements, config):
     start_time = 0
     priority   = 1
     for pos, element in enumerate(elements):
-        if element.__class__ == Element.Background:
-            element.set_prev_background(background)
-            background = element
+        try:
+            if element.__class__ == Element.Background:
+                element.set_prev_background(background)
+                background = element
+    
+            if isSlide(element):
+                dur = element.duration
+    
+                prev_transition = find_prev_transition(pos, elements)
+                if(prev_transition):
+                    dur += prev_transition.duration/2
+                    prev_dur = prev_transition.duration/2
+                else:
+                    prev_dur = 0
+    
+                next_transition = find_next_transition(pos, elements)
+                if(next_transition):
+                    dur += next_transition.duration/2
+    
+                src = gst.element_factory_make("gnlsource", config.get_unique(element.name))
+                src.add(element.get_bin(background, dur))
+                src.props.start          = start_time - prev_dur
+                src.props.duration       = dur
+                src.props.media_start    = 0
+                src.props.media_duration = dur
+                src.props.priority       = priority
+                comp.add(src)
+    
+                priority   += 1
+                start_time += element.duration
+    
+            elif element.isa("Transition"):
+                dur = element.duration
+            
+                op = gst.element_factory_make("gnloperation", config.get_unique(element.name))
+                op.add(element.get_bin())
+                op.props.start          = start_time - dur/2
+                op.props.duration       = dur
+                op.props.media_start    = 0
+                op.props.media_duration = dur
+                op.props.priority       = 0
+                comp.add(op)
+    
+            elif element.isa("Audio"):
+                dur   = element.duration
+                track = element.track
+    
+                if not(audio_info.has_key(track)):
+                    audio_info[track] = dict(elements=[], starts=[], durations=[])
+                    
+                audio_info[track]["elements"].append(element)
+                audio_info[track]["starts"].append(start_time)
+                audio_info[track]["durations"].append(dur)
 
-        if isSlide(element):
-            dur = element.duration
-
-            prev_transition = find_prev_transition(pos, elements)
-            if(prev_transition):
-                dur += prev_transition.duration/2
-                prev_dur = prev_transition.duration/2
-            else:
-                prev_dur = 0
-
-            next_transition = find_next_transition(pos, elements)
-            if(next_transition):
-                dur += next_transition.duration/2
-
-            src = gst.element_factory_make("gnlsource", config.get_unique(element.name))
-            src.add(element.get_bin(background, dur))
-            src.props.start          = start_time - prev_dur
-            src.props.duration       = dur
-            src.props.media_start    = 0
-            src.props.media_duration = dur
-            src.props.priority       = priority
-            comp.add(src)
-
-            priority   += 1
-            start_time += element.duration
-
-        elif element.isa("Transition"):
-            dur = element.duration
-        
-            op = gst.element_factory_make("gnloperation", config.get_unique(element.name))
-            op.add(element.get_bin())
-            op.props.start          = start_time - dur/2
-            op.props.duration       = dur
-            op.props.media_start    = 0
-            op.props.media_duration = dur
-            op.props.priority       = 0
-            comp.add(op)
-
-        elif element.isa("Audio"):
-            dur   = element.duration
-            track = element.track
-
-            if not(audio_info.has_key(track)):
-                audio_info[track] = dict(elements=[], starts=[], durations=[])
-                
-            audio_info[track]["elements"].append(element)
-            audio_info[track]["starts"].append(start_time)
-            audio_info[track]["durations"].append(dur)
+        except Exception, e:
+            raise Exception("%s: %s" % (element.location, str(e)))
 
     video_dur = start_time
         
@@ -506,6 +517,9 @@ def get_audio_bin(elements, config, info):
     tracks = audio_info.keys()
     tracks.sort()
     info["num_audio_tracks"] = 0
+    if len(tracks) == 0:
+        audio_info = { 1 : dict( elements=[Element.Silence("generated", "silence", 1, config=config)], starts=[0], durations=[-1] ) }
+        tracks = [1]
 
     for track in tracks:
         elements  = audio_info[track]["elements"]
@@ -758,7 +772,7 @@ def get_preview_backend(config, num_audio_tracks):
 
     video_sink  = gst.element_factory_make("autovideosink")
 
-    backend.add(video_queue, audio_queue, video_sink, audio_sink, *sinks)
+    backend.add(video_queue, video_sink, audio_queue, audio_sink, *sinks)
     video_queue.link(video_sink)
     audio_queue.link(audio_sink)
     backend.add_pad(gst.GhostPad("video_sink", video_queue.get_pad("sink")))

@@ -146,7 +146,7 @@ class Image(Element):
         kenburns.set_property("duration", duration)
         capsfilter.set_property("caps", gst.Caps("video/x-raw-yuv,format=(fourcc)AYUV"))
         caps.set_property("caps", self.config.get_video_caps("AYUV"))
-    
+
         bin.add(*elements)
         filesrc.link(decodebin2)
         gst.element_link_many(*elements[2:])
@@ -465,6 +465,31 @@ class Silence(Audio):
         bin.add_pad(gst.GhostPad("video_src", caps.get_pad("src")))
         return bin
 
+class TestVideo(Element):
+    names = "testvideo"
+    def __init__(self, location, name, duration, pattern):
+        Element.__init__(self, location)
+        self.name = name
+        self.duration = duration
+        self.pattern = pattern
+        
+    def get_bin(self, background=None, duration=None):
+        if duration is None:
+            duration = self.duration
+
+        bin = gst.Bin()
+        src = gst.element_factory_make("videotestsrc")
+        if self.pattern:
+            try:
+                src.props.pattern = self.pattern
+            except:
+                raise Exception("Error setting specified test pattern.")
+        caps = gst.element_factory_make("capsfilter")
+        caps.props.caps = self.config.get_video_caps("AYUV")
+        bin.add(src, caps)
+        src.link(caps)
+        bin.add_pad(gst.GhostPad("src", caps.get_pad("src")))
+        return bin
 
     
     
