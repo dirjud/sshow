@@ -330,7 +330,7 @@ class Title(Element):
 
 ################################################################################
 class Transition(Element):
-    names   = ['fadein', 'fadeout', 'crossfade', 'wipe']
+    names   = ['fadein', 'fadeout', 'crossfade', 'wipe', ] + transition.smptes + transition.kenburns
 
     def __init__(self, location, name, duration):
         Element.__init__(self, location)
@@ -343,14 +343,16 @@ class Transition(Element):
 
         if name in ['fadein', 'fadeout', 'crossfade']:
             self.get_transition_bin = transition.get_crossfade_bin
-        if name in ["wipe"]:
+        elif name in ["wipe"] + transition.smptes:
             self.get_transition_bin = transition.get_smpte_bin
+        elif name in transition.kenburns:
+            self.get_transition_bin = transition.get_kenburns_bin
 
     def __str__(self):
         return "%s:%g" % (self.name, dur2flt(self.duration))
 
     def get_bin(self):
-        bin, self.controller = self.get_transition_bin(self.config, self.duration)
+        bin, self.controller = self.get_transition_bin(self.name, self.config, self.duration)
         return bin
 
 

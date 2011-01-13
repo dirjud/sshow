@@ -32,7 +32,7 @@ def get_alpha_transition(config, element="alpha"):
     # deleted before it is even applied
     return bin
 
-def get_crossfade_bin(config, duration):
+def get_crossfade_bin(name, config, duration):
     bin = get_alpha_transition(config, element = "alpha")
     alpha = bin.get_by_name("alpha2")
 
@@ -43,9 +43,13 @@ def get_crossfade_bin(config, duration):
 
     return bin, controller
 
-def get_smpte_bin(config, duration, type=1):
+def get_smpte_bin(name, config, duration):
+    if(name == "wipe"):
+        name = "bar-wipe-lr"
+
     bin = get_alpha_transition(config, element = "smptealpha")
     alpha = bin.get_by_name("alpha2")
+    alpha.props.type = name
 
     controller = gst.Controller(alpha, "position")
     controller.set_interpolation_mode("position", gst.INTERPOLATE_LINEAR)
@@ -54,21 +58,119 @@ def get_smpte_bin(config, duration, type=1):
 
     return bin, controller
 
+smptes = [
+    "bar-wipe-lr",
+    "bar-wipe-tb",
+    "box-wipe-tl",
+    "box-wipe-tr",
+    "box-wipe-br",
+    "box-wipe-bl",
+    "four-box-wipe-ci",
+    "four-box-wipe-co",
+    "barndoor-v",
+    "barndoor-h",
+    "box-wipe-tc",
+    "box-wipe-rc",
+    "box-wipe-bc",
+    "box-wipe-lc",
+    "diagonal-tl",
+    "diagonal-tr",
+    "bowtie-v",
+    "bowtie-h",
+    "barndoor-dbl",
+    "barndoor-dtl",
+    "misc-diagonal-dbd",
+    "misc-diagonal-dd",
+    "vee-d",
+    "vee-l",
+    "vee-u",
+    "vee-r",
+    "barnvee-d",
+    "barnvee-l",
+    "barnvee-u",
+    "barnvee-r",
+    "iris-rect",
+    "clock-cw12",
+    "clock-cw3",
+    "clock-cw6",
+    "clock-cw9",
+    "pinwheel-tbv",
+    "pinwheel-tbh",
+    "pinwheel-fb",
+    "fan-ct",
+    "fan-cr",
+    "doublefan-fov",
+    "doublefan-foh",
+    "singlesweep-cwt",
+    "singlesweep-cwr",
+    "singlesweep-cwb",
+    "singlesweep-cwl",
+    "doublesweep-pv",
+    "doublesweep-pd",
+    "doublesweep-ov",
+    "doublesweep-oh",
+    "fan-t",
+    "fan-r",
+    "fan-b",
+    "fan-l",
+    "doublefan-fiv",
+    "doublefan-fih",
+    "singlesweep-cwtl",
+    "singlesweep-cwbl",
+    "singlesweep-cwbr",
+    "singlesweep-cwtr",
+    "doublesweep-pdtl",
+    "doublesweep-pdbl",
+    "saloondoor-t",
+    "saloondoor-l",
+    "saloondoor-b",
+    "saloondoor-r",
+    "windshield-r",
+    "windshield-u",
+    "windshield-v",
+    "windshield-h",
+    ]
 
+kenburns = [
+    "swap-lr",
+]
+def get_kenburns_bin(name, config, duration):
+    bin = gst.Bin()
+    kb1 = gst.element_factory_make("kenburns")
+    kb2 = gst.element_factory_make("kenburns")
+    mixer  = gst.element_factory_make("videomixer")
+    mixer.props.background = "black"
+    caps   = gst.element_factory_make("capsfilter")
+    caps.props.caps = config.get_video_caps("AYUV")
 
+    bin.add(kb1, kb2, mixer, caps)
+    kb1.get_pad("src").link(mixer.get_pad("sink_0"))
+    kb2.get_pad("src").link(mixer.get_pad("sink_1"))
+    mixer.link(caps)
 
-#def get_available_smpte():
-#    try:
-#        element = gst.element_factory_make("smtpealpha")
-#    except gst.ElementNotFoundError:
-#        return [], None
-#
-#    names = []
-#    args  = []
-#    for i in range(500):
-#        try:
-#            element.props.type = i
-#        except
-            
-        
+    bin.add_pad(gst.GhostPad("sink1", kb1.get_pad("sink")))
+    bin.add_pad(gst.GhostPad("sink2", kb2.get_pad("sink")))
+    bin.add_pad(gst.GhostPad("src",   caps.get_pad("src")))
 
+    kb1.props.pan_method = "external"
+    kb2.props.pan_method = "external"
+
+    c1 = gst.Controller(kb1, "zoom1", "xcenter1", "ycenter1")
+    c1.set_interpolation_mode("zoom1", gst.INTERPOLATE_LINEAR)
+    c1.set_interpolation_mode("xcenter1", gst.INTERPOLATE_LINEAR)
+    c1.set_interpolation_mode("ycenter1", gst.INTERPOLATE_LINEAR)
+    c1.set("zoom1",    0,        1.0)
+    c1.set("xcenter1", 0,        0.5)
+    c1.set("zoom1",    duration, 4.0)
+    c1.set("xcenter1", duration, -2.0)
+
+    c2 = gst.Controller(kb2, "zoom1", "xcenter1", "ycenter1")
+    c2.set_interpolation_mode("zoom1",    gst.INTERPOLATE_LINEAR)
+    c2.set_interpolation_mode("xcenter1", gst.INTERPOLATE_LINEAR)
+    c2.set_interpolation_mode("ycenter1", gst.INTERPOLATE_LINEAR)
+    c2.set("zoom1",    0,        4.0)
+    c2.set("xcenter1", 0,        3.0)
+    c2.set("zoom1",    duration, 1.0)
+    c2.set("xcenter1", duration, 0.5)
+
+    return bin, (c1, c2)

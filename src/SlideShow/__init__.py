@@ -481,6 +481,7 @@ def get_video_bin(elements, config):
                 audio_info[track]["durations"].append(dur)
 
         except Exception, e:
+            raise
             raise Exception("%s: %s" % (element.location, str(e)))
 
     video_dur = start_time
