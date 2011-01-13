@@ -7,7 +7,7 @@ logging.basicConfig(level=logging.WARN)
 log = logging.getLogger("sscompile")
 
 time0 = time.time()
-config, elements, frontend = SlideShow.get_config_to_frontend()
+config, elements, frontend, info = SlideShow.get_config_to_frontend()
 
 if frontend is None:
     if not(config.has_key("input_txtfile")):
@@ -15,7 +15,7 @@ if frontend is None:
     else:
         raise Exception("Error creating frontend")
     
-backend  = SlideShow.get_encoder_backend(config)
+backend  = SlideShow.get_encoder_backend(config, info["num_audio_tracks"])
 pipeline = SlideShow.get_gst_pipeline(frontend, backend)
 
 class Progress(threading.Thread):

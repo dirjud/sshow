@@ -62,7 +62,7 @@ class DVDSlideshow():
             try:
                 pipeline.append(DVDSlideshow.parse_line(line, config, location))
             except Exception, e:
-                #raise
+                raise
                 raise Exception("%s: %s" % (location, str(e)))
         f.close()
 
@@ -153,6 +153,8 @@ class DVDSlideshow():
         
         if extension in Element.Image.extensions:
             return DVDSlideshow.getImage(location, element, extension, fields)
+        elif element in Element.Silence.names:
+            return DVDSlideshow.getSilence(location, element, fields)
         elif extension in Element.Audio.extensions:
             return DVDSlideshow.getAudio(location, element, extension, fields)
         elif element in Element.Transition.names:
@@ -234,4 +236,17 @@ class DVDSlideshow():
                 effects.append(Element.Effect(name, eval(DVDSlideshow.pop(fields))))
             
         return Element.Audio(location, filename, extension, track, effects)
+
+    @staticmethod
+    def getSilence(location, name, fields):
+        track = DVDSlideshow.pop(fields)
+        if(track == ""):
+            track = 1
+        else:
+            try:
+                track = int(track)
+            except:
+                raise Exception("Track is not an integer")
+
+        return Element.Silence(location, name, track)
 

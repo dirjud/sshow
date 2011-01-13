@@ -119,13 +119,13 @@ class Preview(object):
 	    imagesink.set_xwindow_id(self.preview_window.window.xid)
 	    gtk.gdk.threads_leave()
             
-    def set_frontend(self, frontend, config):
+    def set_frontend(self, frontend, info, config):
         self.stop()
         self.init()
         self.config   = config
         self.frontend = frontend
         if(self.frontend):
-            self.backend  = SlideShow.get_preview_backend(self.config)
+            self.backend  = SlideShow.get_preview_backend(self.config, info["num_audio_tracks"])
             self.pipeline = SlideShow.get_gst_pipeline(self.frontend, self.backend)
     
             bus = self.pipeline.get_bus()
@@ -260,10 +260,10 @@ class PreviewApp(object):
 
     def load(self, filename=None):
         self.preview.stop()
-        self.config, self.elements, self.frontend = SlideShow.get_config_to_frontend(filename)
+        self.config, self.elements, self.frontend, info = SlideShow.get_config_to_frontend(filename)
         if self.config.has_key("input_txtfile"):
             self.input_txtfile = self.config["input_txtfile"]
-        self.preview.set_frontend(self.frontend, self.config)
+        self.preview.set_frontend(self.frontend, info, self.config)
 
         self.preview.set_size(self.config["width"], self.config["height"])
         self.window.resize(*self.builder.get_object("topbox").size_request())

@@ -356,7 +356,7 @@ class Transition(Element):
 
 ################################################################################
 class Audio(Element):
-    extensions = [ 'ogg', 'mp3', 'wav', 'silence', 'm4a', 'aac' ]
+    extensions = [ 'ogg', 'mp3', 'wav', 'm4a', 'aac' ]
 
     def __init__(self, location, filename, extension, track, effects):
         Element.__init__(self, location)
@@ -369,8 +369,6 @@ class Audio(Element):
         self.track = track
         self.effects= effects
 
-        if(self.track > 2):
-            raise Exception("ERROR: Only 2 audio tracks supported at this time.  Fix this audio file track number!")
         if(self.track < 1):
             raise Exception("ERROR: Must specify positive and non-zero track number.  Fix this audio file track number!")
 
@@ -433,20 +431,40 @@ class Audio(Element):
         bin.add_pad(gst.GhostPad("src", capsfilter.get_pad("src")))
         return bin
 
-    @staticmethod
-    def get_silence_bin(config):
+
+class Silence(Audio):
+    names = [ 'silence' ]
+
+    def __init__(self, location, name, track, duration=-1, config=None):
+        Element.__init__(self, location)
+        self.name = name
+        self.track = track
+        self.fadein  = 0
+        self.fadeout = 0
+        self.effects = []
+        self.duration = duration
+        self.config=config
+
+    def __str__(self):
+        return "%s:%s" % (self.name, self.track,)
+
+    def initialize(self):
+        pass
+
+    def get_bin(self, duration=None):
         bin = gst.Bin()
         silence = gst.element_factory_make("audiotestsrc")
         silence.props.wave=4 # silence
         silence.props.volume=0.0
         convert = gst.element_factory_make("audioconvert")
         caps    = gst.element_factory_make("capsfilter")
-        caps.props.caps = config.get_audio_caps()
+        caps.props.caps = self.config.get_audio_caps()
         bin.add(silence, convert, caps)
         silence.link(convert)
         convert.link(caps)
         bin.add_pad(gst.GhostPad("video_src", caps.get_pad("src")))
         return bin
+
 
     
     

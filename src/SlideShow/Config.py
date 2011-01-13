@@ -5,6 +5,7 @@ log = logging.getLogger(__name__)
 class Config(dict):
     def __init__(self):
         dict.__init__(self)
+        self.unique = {}
         defaults = dict(
             outdir       = os.path.abspath("."),
             audiosmp     = 1,  # default to do audio in background...
@@ -147,6 +148,13 @@ class Config(dict):
         "logo"                       ,
         ]
 
+    def get_unique(self, name):
+        self.unique[name] = self.unique.get(name, 0) + 1
+        if self.unique[name] == 1:
+            return name
+        else:
+            return name + "_" + str(self.unique[name])
+        
     def is_var(self, key):
         return key in Config.vars
 

@@ -114,6 +114,23 @@ def find_next_transition(pos, elements):
     else:
         return None
 
+def find_prev_transition(pos, elements):
+    """Walks elements backward starting with pos until it
+    finds a transition or another slide. If it finds a transition, it
+    returns the transition element. If it reaches the beginning or a
+    slide, it returns None. This is useful for finding a transition
+    between two slides (if one exists)."""
+    if pos > 0:
+        prev = elements[pos-1]
+        if prev.isa("Transition"):
+            return prev
+        elif isSlide(prev):
+            return None
+        else:
+            return find_prev_transition(pos-1, elements)
+    else:
+        return None
+
 def find_next_audio_element(pos, elements):
     """Walks the elements forward starting with element until it finds
     an audio element or another slide. If it finds an audio element,
@@ -395,10 +412,13 @@ def get_video_bin(elements, config):
     background.set_config(config)
     background.initialize()
 
+    # we will also create the syncronization information necessary to build
+    # the audio tracks.
+    audio_info = {} # each track will get its own list of audio elements
+
     start_time = 0
     priority   = 1
     for pos, element in enumerate(elements):
-
         if element.__class__ == Element.Background:
             element.set_prev_background(background)
             background = element
@@ -417,7 +437,7 @@ def get_video_bin(elements, config):
             if(next_transition):
                 dur += next_transition.duration/2
 
-            src = gst.element_factory_make("gnlsource", "fg%03d_" % pos + element.name)
+            src = gst.element_factory_make("gnlsource", config.get_unique(element.name))
             src.add(element.get_bin(background, dur))
             src.props.start          = start_time - prev_dur
             src.props.duration       = dur
@@ -429,10 +449,10 @@ def get_video_bin(elements, config):
             priority   += 1
             start_time += element.duration
 
-        elif element.__class__ == Element.Transition:
+        elif element.isa("Transition"):
             dur = element.duration
         
-            op = gst.element_factory_make("gnloperation", "tr%03d_" % pos + element.name)
+            op = gst.element_factory_make("gnloperation", config.get_unique(element.name))
             op.add(element.get_bin())
             op.props.start          = start_time - dur/2
             op.props.duration       = dur
@@ -440,6 +460,17 @@ def get_video_bin(elements, config):
             op.props.media_duration = dur
             op.props.priority       = 0
             comp.add(op)
+
+        elif element.isa("Audio"):
+            dur   = element.duration
+            track = element.track
+
+            if not(audio_info.has_key(track)):
+                audio_info[track] = dict(elements=[], starts=[], durations=[])
+                
+            audio_info[track]["elements"].append(element)
+            audio_info[track]["starts"].append(start_time)
+            audio_info[track]["durations"].append(dur)
 
     video_dur = start_time
         
@@ -459,100 +490,193 @@ def get_video_bin(elements, config):
     print "Video Composition:"
     print_gnlcomp(comp)
 
-    return bin, dict(duration=video_dur, composition=comp, bin=bin)
+    return bin, dict(duration=video_dur, composition=comp, bin=bin, audio_info=audio_info)
 
 def get_audio_bin(elements, config, info):
-    comp = gst.element_factory_make("gnlcomposition", "audio_composition")
-    #comp = info["composition"]
+    """This will return a gstreamer bin with the requested audio compositions.
+    You must have run the get_video_bin() function first as it will setup
+    the appropriate timing flags necessary to generate the audio. The 'info'
+    parameter is the dictionary returned by get_video_bin() and contains
+    the information necessary to process the audio tracks. This will produce
+    a bin with as many audio sink pads as tracks requested."""
 
-    video_time = 0
-    audio_time = 0
-    priority   = 2
-    done       = False
-    for element in elements:
-        if element.__class__ == Element.Audio:
-            dur = element.duration
+    audio_info = info["audio_info"]
+    audio = gst.Bin("audio_tracks")
 
-            if(audio_time + dur > info["duration"]):
-                dur = info["duration"] - audio_time
-                done = True
+    tracks = audio_info.keys()
+    tracks.sort()
+    info["num_audio_tracks"] = 0
 
-            src = gst.element_factory_make("gnlsource")
+    for track in tracks:
+        elements  = audio_info[track]["elements"]
+        starts    = audio_info[track]["starts"]
+        durations = audio_info[track]["durations"]
+
+        # Add silence to the beginning if the first audio element does not
+        # start at time 0.
+        if(starts[0] != 0):
+            elements.insert(0, Element.Silence("generated","silence",track, config=config))
+            durations.insert(0, starts[0])
+            starts.insert(0, 0)
+
+        # Now start playing out the pipeline so we can do the following:
+        # 1. Concatenate elements with the same starting time.
+        # 2. Calculate the duration of any filler segments (e.g. silence)
+        # 3. Clip any elements that are too long.
+        # 4. Fill the end of the track with silence if necessary
+        elements2 = [  ]
+        starts2   = [  ]
+        durations2= [  ]
+
+        reached_end_of_video = False
+        for pos in range(len(elements)):
+            # calculate the position of the next segment
+            pos_next = None # None means the next is the end of the pipeline
+            for pos2 in range(pos+1, len(elements)):
+                if starts[pos2] == starts[pos]: 
+                    continue #skip any that will be concat'd to this one
+                else:
+                    pos_next = pos2
+                    break
+
+            # concatenate elements with the same starting time by calculating
+            # the 'start' time, which is the adjusted start time
+            if (pos == 0) or (starts[pos] != starts[pos-1]):
+                # this is the easy case when the audio element is synced
+                # directly to a video element
+                start = starts[pos] 
+            else: 
+                # this is the harder case where the audio element needs
+                # sycn'd to the end of the previous audio element
+                if(durations[pos-1] == -1):
+                    # Drop this audio element as it is a filler placed
+                    # after a filler.  Only the first filler lives when two
+                    # fillers are placed in a row.
+                    continue 
+
+                # If we made it here, this audio element needs time
+                # shifted (concatened to the end of the previous
+                # element), so put its 'start' time at the end of the
+                # previous audio element minus any fadeout time on the
+                # previous element.
+                start = starts[pos-1] + durations[pos-1] - elements[pos-1].fadeout
+
+                # Now make sure this starting time is valid. It is invalid
+                # if it is longer than the video sequence or if starts past
+                # the next audio element that is sync'd to a video element.
+                if pos_next is None:
+                    if start > info["duration"]:
+                        continue # Drop b/c it starts after the end of video.
+                else:
+                    if start > starts[pos_next]:
+                        continue # Drop b/c it starts after next audio element
+
+            # now let's calculate the correct duration if this is a
+            # filler element (e.g. silence). The duration of a filler
+            # is either either the end of the video or the start of
+            # the next audio.
+            if durations[pos] == -1:
+                if pos_next is None: 
+                    duration = info["duration"] - start
+                else:
+                    duration = starts[pos_next] - start
+            else:
+                duration = durations[pos]
+
+            # now let's clip the duration if it is too long
+            if pos_next is None:
+                if start + duration > info["duration"]:
+                    duration = info["duration"] - start
+            else:
+                if start + duration > info["duration"]:
+                    duration = info["duration"] - start
+                    reached_end_of_video = True
+                
+                if start + duration > starts[pos_next]:
+                    duration = starts[pos_next] - start
+
+            # now add the element to final audio list
+            elements2.append(elements[pos])
+            starts2.append(start)
+            durations2.append(duration)
+
+            if reached_end_of_video:
+                break
+
+            # add silence as filler if necessary
+            extra = 0
+            if(pos_next is None and pos+1 == len(elements)):
+                extra = info["duration"] - start - duration
+            elif(pos + 1 == pos_next):
+                extra = min(info["duration"] - start - duration,
+                            starts[pos_next] - start - duration)
+            if extra > 0:
+                print "extra=", extra, start, duration
+                elements2.append(Element.Silence("generated", "silence", track, config=config))
+                starts2.append(start + duration)
+                durations2.append(extra)
+        
+        # now let's build the gnlcomposition for this audio track
+        comp = gst.element_factory_make("gnlcomposition")
+        priority = 1
+        for pos, element in enumerate(elements2):
+            dur   = durations2[pos]
+            start = starts2[pos]
+
+            src = gst.element_factory_make("gnlsource", config.get_unique(element.name))
             src.add(element.get_bin(dur))
-            src.props.start          = audio_time
+            src.props.start          = start
             src.props.duration       = dur
             src.props.media_start    = 0
             src.props.media_duration = dur
             src.props.priority       = priority
             comp.add(src)
-
             priority   += 1
-            audio_time += dur - element.fadeout #remove the fadeout time so the next clip starts when the fadeout starts
-
-            
-            if done:
-                break
     
-    audio_dur = info["duration"]
-    
-    # fill audio with silence if necessary
-    if(audio_time < audio_dur):
-        dur = audio_dur - audio_time
-        src = gst.element_factory_make("gnlsource", "silence")
-        silence = Element.Audio.get_silence_bin(config)
-        src.add(silence)
-        src.props.start          = audio_time
-        src.props.duration       = dur
-        src.props.media_start    = 0
-        src.props.media_duration = dur
-        src.props.priority       = priority
-        comp.add(src)
+        # add an audio adder to sum all overlapping tracks
+        op = gst.element_factory_make("gnloperation", config.get_unique("audio_adder_track"+str(track)))
+        op.add(gst.element_factory_make("adder"))
+        op.props.start          = 0
+        op.props.duration       = info["duration"]
+        op.props.media_start    = 0
+        op.props.media_duration = info["duration"]
+        op.props.priority       = 0
+        comp.add(op)
+        bin=gst.Bin()
+        bin.add(comp)
 
-    # add an audio adder to sum all overlapping tracks
-    op = gst.element_factory_make("gnloperation", "audio_adder")
-    op.add(gst.element_factory_make("adder"))
-    op.props.start          = 0
-    op.props.duration       = audio_dur
-    op.props.media_start    = 0
-    op.props.media_duration = audio_dur
-    op.props.priority       = 0
-    comp.add(op)
+        print "Audio Track", track
+        print_gnlcomp(comp)
+        
+        bin = gst.Bin()
+        caps  = gst.element_factory_make("capsfilter")
+        caps.props.caps = config.get_audio_caps()
+        bin.add(comp, caps)
+        bin.add_pad(gst.GhostPad("src", caps.get_pad("src")))
 
-    bin = gst.Bin()
-    caps  = gst.element_factory_make("capsfilter")
-    caps.props.caps = config.get_audio_caps()
-    bin.add(comp, caps)
-    bin.add_pad(gst.GhostPad("audio_src", caps.get_pad("src")))
+        def on_pad(comp, pad, element):
+            capspad = element.get_compatible_pad(pad, pad.get_caps())
+            pad.link(capspad)
+        comp.connect("pad-added", on_pad, caps)
+        audio.add(bin)
+        audio.add_pad(gst.GhostPad("track"+str(track), bin.get_pad("src")))
+        info["num_audio_tracks"] += 1
 
-    def on_pad(comp, pad, element):
-        capspad = element.get_compatible_pad(pad, pad.get_caps())
-        pad.link(capspad)
-    comp.connect("pad-added", on_pad, caps)
-
-    print "Audio Composition:"
-    print_gnlcomp(comp)
-
-    return bin
+    return audio
 
 def get_frontend(elements, config):
     video_bin, info = get_video_bin(elements, config)
     audio_bin = get_audio_bin(elements, config, info)
 
-    video_caps = gst.element_factory_make("capsfilter")
-    audio_caps = gst.element_factory_make("capsfilter")
-    video_caps.props.caps = config.get_video_caps("I420")
-    audio_caps.props.caps = config.get_audio_caps()
-
     frontend = gst.Bin("frontend")
-    frontend.add(video_bin, audio_bin, video_caps, audio_caps)
+    frontend.add(video_bin, audio_bin)
 
-    video_bin.link(video_caps)
-    audio_bin.link(audio_caps)
-    frontend.add_pad(gst.GhostPad("video_src", video_caps.get_pad("src")))
-    frontend.add_pad(gst.GhostPad("audio_src", audio_caps.get_pad("src")))
-    return frontend
+    frontend.add_pad(gst.GhostPad("video_src", video_bin.get_pad("src")))
+    for pad in audio_bin.pads():
+        frontend.add_pad(gst.GhostPad(pad.get_name(), pad))
+    return frontend, info
 
-def get_encoder_backend(config):
+def get_encoder_backend(config, num_audio_tracks):
 
 #    if config["mpeg_encoder"] == 'ffmpeg':
 #        if config["output_format"] == 'flv':
@@ -576,13 +700,7 @@ def get_encoder_backend(config):
     video_queue.props.max_size_time = 10 * gst.SECOND
     video_queue.props.max_size_bytes   = 0
     video_queue.props.max_size_buffers = 0
-    audio_queue = gst.element_factory_make("queue")
-    audio_queue.props.max_size_time = 10 * gst.SECOND
-    audio_queue.props.max_size_bytes   = 0
-    audio_queue.props.max_size_buffers = 0
     video_ident = gst.element_factory_make("identity")
-    audio_ident = gst.element_factory_make("identity")
-    audio_ident.props.single_segment = 1
     video_ident.props.single_segment = 1
 
     if 0:
@@ -599,44 +717,67 @@ def get_encoder_backend(config):
         video_enc.props.bitrate = config["video_bitrate"]
         mux = gst.element_factory_make("mplex", "mux")
 
-    audio_enc = gst.element_factory_make("lamemp3enc", "audio_enc")
-
     sink      = gst.element_factory_make("filesink", "sink")
     sink.set_property("location", config["outdir"]+"/"+config["slideshow_name"]+".mp4")
 
-    backend.add(video_queue, video_ident, video_enc, audio_queue, audio_ident, audio_enc, mux, sink)
-    gst.element_link_many(video_ident, video_enc, video_queue, mux)
-    gst.element_link_many(audio_ident, audio_enc, audio_queue, mux, sink)
+    backend.add(video_queue, video_ident, video_enc, mux, sink)
+    gst.element_link_many(video_ident, video_enc, video_queue, mux, sink)
     backend.add_pad(gst.GhostPad("video_sink", video_ident.get_pad("sink")))
-    backend.add_pad(gst.GhostPad("audio_sink", audio_ident.get_pad("sink")))
+
+    for i in range(num_audio_tracks):
+        audio_queue = gst.element_factory_make("queue")
+        audio_queue.props.max_size_time = 10 * gst.SECOND
+        audio_queue.props.max_size_bytes   = 0
+        audio_queue.props.max_size_buffers = 0
+        audio_ident = gst.element_factory_make("identity")
+        audio_ident.props.single_segment = 1
+        audio_enc = gst.element_factory_make("lamemp3enc")
+        backend.add(audio_queue, audio_ident, audio_enc)
+        gst.element_link_many(audio_ident, audio_enc, audio_queue, mux)
+        backend.add_pad(gst.GhostPad("audio_sink%d"%i, audio_ident.get_pad("sink")))
     return backend
 
-def get_preview_backend(config):
+def get_preview_backend(config, num_audio_tracks):
     backend = gst.Bin("backend")
     video_queue = gst.element_factory_make("queue")
     video_queue.props.max_size_time = 10 * gst.SECOND
     video_queue.props.max_size_bytes   = 0
     video_queue.props.max_size_buffers = 0
     #audio_volume = gst.element_factory_make("volume","volume")
-    audio_queue = gst.element_factory_make("queue")
-    audio_queue.props.max_size_time = 10 * gst.SECOND
-    audio_queue.props.max_size_bytes   = 0
-    audio_queue.props.max_size_buffers = 0
-    video_sink  = gst.element_factory_make("autovideosink")
-    audio_sink  = gst.element_factory_make("autoaudiosink")
 
-    backend.add(video_queue, audio_queue, video_sink, audio_sink)
+    sinks = []
+    for i in range(num_audio_tracks):
+        if i == 0:
+            audio_queue = gst.element_factory_make("queue")
+            audio_queue.props.max_size_time = 10 * gst.SECOND
+            audio_queue.props.max_size_bytes   = 0
+            audio_queue.props.max_size_buffers = 0
+            audio_sink  = gst.element_factory_make("autoaudiosink")
+        else:
+            sinks.append(gst.element_factory_make("fakesink"))
+
+    video_sink  = gst.element_factory_make("autovideosink")
+
+    backend.add(video_queue, audio_queue, video_sink, audio_sink, *sinks)
     video_queue.link(video_sink)
     audio_queue.link(audio_sink)
     backend.add_pad(gst.GhostPad("video_sink", video_queue.get_pad("sink")))
-    backend.add_pad(gst.GhostPad("audio_sink", audio_queue.get_pad("sink")))
+    backend.add_pad(gst.GhostPad("audio_sink0", audio_queue.get_pad("sink")))
+    for i,sink in enumerate(sinks):
+        backend.add_pad(gst.GhostPad("audio_sink%d" % (i+1,), sink.get_pad("sink")))
+
     return backend
 
 def get_gst_pipeline(frontend, backend):
     pipeline = gst.Pipeline()
     pipeline.add(frontend, backend)
-    frontend.get_pad("video_src").link(backend.get_pad("video_sink"))
-    frontend.get_pad("audio_src").link(backend.get_pad("audio_sink"))
+    i = 0
+    for pad in frontend.pads():
+        if pad.get_name() == "video_src":
+            pad.link(backend.get_pad("video_sink"))
+        else:
+            pad.link(backend.get_pad("audio_sink%d"%i))
+            i += 1
     return pipeline
 
 def start(pipeline, eos_cb, err_cb):
@@ -671,9 +812,9 @@ def get_config_to_frontend(input_txtfile=None):
         
     elements = read_elements(config["input_txtfile"], config)
     initialize_elements(elements, config)
-    frontend = get_frontend(elements, config)
+    frontend, info = get_frontend(elements, config)
 
-    return config, elements, frontend
+    return config, elements, frontend, info
 
 def get_state(pipeline):
     return pipeline.get_state()[1]
