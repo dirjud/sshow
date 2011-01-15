@@ -4,7 +4,7 @@ import Reader, Config
 log = logging.getLogger(__name__)
 
 def check_system():
-    for element in [ "gnlcomposition", "kenburns", "videomixer", "textoverlay", "imagefreeze", "alpha", ]:
+    for element in [ "gnlcomposition", "kenburns", "videomixer2", "textoverlay", "imagefreeze", "alpha", ]:
         if gst.element_factory_find(element) is None:
             raise Exception("Gstreamer element '%s' is not installed. Please install the appropriate gstreamer plugin and try again." % (element,))
 
@@ -38,15 +38,6 @@ def read_elements(filename, config):
     config["slideshow_name"] = ".".join(fname.split(".")[:-1])#remove file suffix
     log.debug("Setting default slideshow name: " + config["slideshow_name"])
 
-    if(config["debug"] >= 1):
-        config["ffmpeg_out"] = config["outdir"]+"/"+config["logfile"]
-    else:
-        config["ffmpeg_out"] = '/dev/null'
-
-    config["workdir"] = os.path.abspath("./"+config["slideshow_name"] + "_work")
-    if not(os.path.exists(config["workdir"])):
-        os.mkdir(config["workdir"])
-        log.debug("Created work directory " + config["workdir"])
     return Reader.DVDSlideshow(filename).get_pipeline(config)
 
 ##############################################
@@ -316,12 +307,14 @@ def initialize_elements(elements, config):
 
     
     framerate_numer = 30000 #int(round(config["framerate"] * 100))
-    framerate_denom = 1000 # 1001
+    framerate_denom = 1001 # 1001
     config["framerate"] = framerate_numer / float(framerate_denom)
+    config["framerate_numer"] = framerate_numer
+    config["framerate_denom"] = framerate_denom
+
 
     height = config["dvd_height"]
     width = int(round(config["dvd_height"] * config["aspect_ratio_float"]))
-    config["video_caps"] = "video/x-raw-yuv,width=%d,height=%d,framerate=(fraction)%d/%d" % (width, height, framerate_numer, framerate_denom)
     config["width"]  = width
     config["height"] = height
 
@@ -425,6 +418,8 @@ def get_video_bin(elements, config):
 
     start_time = 0
     priority   = 1
+    slide_times = []
+    chapter_times = []
     for pos, element in enumerate(elements):
         try:
             if element.__class__ == Element.Background:
@@ -432,6 +427,7 @@ def get_video_bin(elements, config):
                 background = element
     
             if isSlide(element):
+                slide_times.append(start_time)
                 dur = element.duration
     
                 prev_transition = find_prev_transition(pos, elements)
@@ -479,6 +475,9 @@ def get_video_bin(elements, config):
                 audio_info[track]["elements"].append(element)
                 audio_info[track]["starts"].append(start_time)
                 audio_info[track]["durations"].append(dur)
+            
+            elif element.isa("Chapter"):
+                chapter_times.append(start_time)
 
         except Exception, e:
             raise
@@ -502,7 +501,7 @@ def get_video_bin(elements, config):
     print "Video Composition:"
     print_gnlcomp(comp)
 
-    return bin, dict(duration=video_dur, composition=comp, bin=bin, audio_info=audio_info)
+    return bin, dict(duration=video_dur, composition=comp, bin=bin, audio_info=audio_info, slide_times=slide_times, chapter_times=chapter_times)
 
 def get_audio_bin(elements, config, info):
     """This will return a gstreamer bin with the requested audio compositions.
@@ -626,7 +625,6 @@ def get_audio_bin(elements, config, info):
                 extra = min(info["duration"] - start - duration,
                             starts[pos_next] - start - duration)
             if extra > 0:
-                print "extra=", extra, start, duration
                 elements2.append(Element.Silence("generated", "silence", track, config=config))
                 starts2.append(start + duration)
                 durations2.append(extra)
@@ -711,44 +709,72 @@ def get_encoder_backend(config, num_audio_tracks):
 #        encoder_cmd = "mpeg2enc "+config["mpeg2enc_params"]+" -o "+config["workdir"]+"/video.mpg -" # < "$workdir"/$yuvfifo >> "$outdir/$logfile" 2>&1 & 
     
     backend = gst.Bin("backend")
-    video_queue = gst.element_factory_make("queue")
-    video_queue.props.max_size_time = 10 * gst.SECOND
-    video_queue.props.max_size_bytes   = 0
-    video_queue.props.max_size_buffers = 0
     video_ident = gst.element_factory_make("identity")
     video_ident.props.single_segment = 1
+    video_caps = gst.element_factory_make("capsfilter")
+    video_caps.props.caps = config.get_video_caps("I420")
+    video_scale = gst.element_factory_make("videoscale")
+    video_caps2 = gst.element_factory_make("capsfilter")
+    #video_queue = gst.element_factory_make("queue")
+    #video_queue.props.max_size_time = 10 * gst.SECOND
+    #video_queue.props.max_size_bytes   = 0
+    #video_queue.props.max_size_buffers = 0
 
     if 0:
+        video_caps2.props.caps = config.get_video_caps("I420")
         video_enc = gst.element_factory_make("ffenc_mpeg4", "encoder")
         video_enc.props.bitrate = config["video_bitrate"] * 1000
         mux = gst.element_factory_make("mp4mux", "mux")
-    elif 1:
+        extension = "mp4"
+    elif 0:
+        video_caps2.props.caps = config.get_video_caps("I420")
         video_enc = gst.element_factory_make("x264enc",    "video_enc")
         video_enc.props.bitrate = config["video_bitrate"]
         mux = gst.element_factory_make("mp4mux", "mux")
+        extension = "mp4"
+    elif 0:
+        video_caps2.props.caps = config.get_video_caps("I420", width=720, height=480)
+        video_enc = gst.element_factory_make("ffenc_mpeg2video", "video_enc")
+        video_enc.props.bitrate = config["video_bitrate"] * 1000
+        print config["video_bitrate"]
+        mux = gst.element_factory_make("mplex", "mux")
+        mux.props.format = 8
+        mux.props.mux_bitrate = 9500
+        mux.props.vbr = True
+        extension = "vob"
     else:
+        video_caps2.props.caps = config.get_video_caps("I420", width=720, height=480)
         video_enc = gst.element_factory_make("mpeg2enc",    "video_enc")
-        video_enc.props.format = 8
+        video_enc.props.format = 8 # dvd mpeg-2 for dvdauthor
         video_enc.props.bitrate = config["video_bitrate"]
         mux = gst.element_factory_make("mplex", "mux")
+        mux.props.format = 8
+        extension = "vob"
+
+    config["outfile"] = config["outdir"]+"/"+config["slideshow_name"]+"."+extension
 
     sink      = gst.element_factory_make("filesink", "sink")
-    sink.set_property("location", config["outdir"]+"/"+config["slideshow_name"]+".mp4")
+    sink.set_property("location", config["outfile"])
 
-    backend.add(video_queue, video_ident, video_enc, mux, sink)
-    gst.element_link_many(video_ident, video_enc, video_queue, mux, sink)
+    backend.add(video_ident, video_caps, video_scale, video_caps2, video_enc, mux, sink)
+    gst.element_link_many(video_ident, video_caps, video_scale, video_caps2, video_enc, mux, sink)
     backend.add_pad(gst.GhostPad("video_sink", video_ident.get_pad("sink")))
 
     for i in range(num_audio_tracks):
-        audio_queue = gst.element_factory_make("queue")
-        audio_queue.props.max_size_time = 10 * gst.SECOND
-        audio_queue.props.max_size_bytes   = 0
-        audio_queue.props.max_size_buffers = 0
+        #audio_queue = gst.element_factory_make("queue")
+        #audio_queue.props.max_size_time = 10 * gst.SECOND
+        #audio_queue.props.max_size_bytes   = 0
+        #audio_queue.props.max_size_buffers = 0
         audio_ident = gst.element_factory_make("identity")
         audio_ident.props.single_segment = 1
-        audio_enc = gst.element_factory_make("lamemp3enc")
-        backend.add(audio_queue, audio_ident, audio_enc)
-        gst.element_link_many(audio_ident, audio_enc, audio_queue, mux)
+        if config["ac3"]:
+            audio_enc = gst.element_factory_make("ffenc_ac3")
+        else:
+            audio_enc = gst.element_factory_make("lamemp3enc")
+        elements = [ audio_ident, audio_enc,  ]
+        backend.add(*elements)
+        gst.element_link_many(*elements)
+        elements[-1].link(mux)
         backend.add_pad(gst.GhostPad("audio_sink%d"%i, audio_ident.get_pad("sink")))
     return backend
 
@@ -841,7 +867,36 @@ def query_position(pipeline):
     dur = pipeline.query_position(gst.FORMAT_TIME)[0]
     return dur/float(gst.SECOND)
 
-def fmt_dur(t):
-    hrs,secs=divmod(t, 3600)
-    mins,secs=divmod(secs, 60)
-    return "%02d:%02d:%02d" % (int(hrs), int(mins), int(round(secs)))
+def fmt_dur(t, show_ms=False):
+    hrs,secs=divmod(t, 3600.)
+    mins,secs=divmod(secs, 60.)
+    if(show_ms):
+        return "%02d:%02d:%02d.%03d" % (int(hrs), int(mins), int(secs), int((secs-int(secs))*1000))
+    else:
+        return "%02d:%02d:%02d" % (int(hrs), int(mins), int(round(secs)))
+
+def reduce_chapters_to(chapter_times, limit):
+    import math
+    N = len(chapter_times)
+    skip = int(math.ceil(len(chapter_times)/float(limit)))
+    return chapter_times[::skip]
+
+def dump_xml(info, config):
+    f = open(config["outdir"]+"/"+config["slideshow_name"]+".xml", "w")
+
+    if info["chapter_times"]:
+        times = list(info["chapter_times"])
+    else:
+        times = list(info["slide_times"])
+    if(times[0] != 0):
+        times.insert(0, 0)
+
+    times = reduce_chapters_to(times, limit=99)
+    for i, time in enumerate(times):
+        times[i] = fmt_dur(time/float(gst.SECOND), show_ms=True)
+
+    f.write('\t<vob chapters="'+ ','.join(times)+'" file="%s" />\n' % config["outfile"])
+    f.write('\t<!-- pal="%d" -->\n' % config["pal"])
+    f.write('\t<!-- button="%s" -->\n' % "")
+    f.write('\t<!-- title="%s" -->\n' % config["slideshow_name"])
+    f.close()

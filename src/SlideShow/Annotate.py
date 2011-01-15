@@ -2,7 +2,45 @@ import gst, gobject, Element
 import logging
 log = logging.getLogger(__name__)
 
-def parse_annotate_params(self, element, params, duration):
+def normalize_font_size(size, config):
+    return int(size/480.*config["height"]*2)/10.
+
+def add_title(self, element, text, which, config):
+    if which == "title":
+        color = config["title_font_color"]
+        size  = normalize_font_size(config["title_font_size"], config)
+        xpos  = 0.5
+        ypos  = 0.5
+        justification = "center"
+    elif which == "top_title":
+        color = config["toptitle_font_color"]
+        size  = normalize_font_size(config["toptitle_font_size"], config)
+        xpos  = config["toptitle_text_location_x"]
+        ypos  = config["toptitle_text_location_y"]
+        justification = config["toptitle_text_justification"]
+    elif which == "bottom_title":
+        color = config["bottomtitle_font_color"]
+        size  = normalize_font_size(config["bottomtitle_font_size"], config)
+        xpos  = config["bottomtitle_text_location_x"]
+        ypos  = config["bottomtitle_text_location_y"]
+        justification = config["bottomtitle_text_justification"]
+
+    param = "text=%s;ypos=%s;xpos=%s;color=%s;justification=%s;size=%s" % (text, ypos, xpos, color, justification, size)
+    log.debug(param)
+    parse_annotate_params(self, element, param)
+
+
+def add_subtitle(self, element, text, config):
+    color = config["subtitle_color"]
+    location = config["subtitle_location"]
+    size = normalize_font_size(config["subtitle_font_size"], config)
+    param = "text=%s;valign=%s;color=%s;size=%s" % (text, location, color, size)
+    log.debug(param)
+    parse_annotate_params(self, element, param)
+
+
+
+def parse_annotate_params(self, element, params, duration=0):
     # valid params:
     #  text= ;
     #  halign=<left|center|right>
@@ -48,10 +86,10 @@ def parse_annotate_params(self, element, params, duration):
     set_prop(element, "valignment", props["valign"])
     set_prop(element, "color",      Element.get_color(props["color"]))
     try:
-        self.anno_controller = gst.Controller(element, "silent", "xpos", "ypos", "color")
+        ctlr = gst.Controller(element, "silent", "xpos", "ypos", "color")
     except RuntimeError:
         log.warn("Annotation: Your gstreamer-plugins-base library is too old to support dynamic annotation such as xpos2, ypos2, start, duration. Update your gstreamer library to enable this feature.")
-        self.anno_controller = None
+        ctlr = None
 
         
     if props.has_key("xpos") or props.has_key("ypos"):
@@ -71,25 +109,31 @@ def parse_annotate_params(self, element, params, duration):
                 cont.set(prop, dur, stop)
 
             if props.has_key("xpos2"):
-                create_pos_controller(self.anno_controller, "xpos", element.props.xpos, float(props["xpos2"]), duration)
+                create_pos_controller(ctlr, "xpos", element.props.xpos, float(props["xpos2"]), duration)
             if props.has_key("ypos2"):
-                create_pos_controller(self.anno_controller, "ypos", element.props.ypos, float(props["ypos2"]), duration)
+                create_pos_controller(ctlr, "ypos", element.props.ypos, float(props["ypos2"]), duration)
 
     set_prop(element, "vertical-render", int(props["vertical"]))
     set_prop(element, "font-desc",       font)
     set_prop(element, "auto-resize",     False)
     set_prop(element, "line-alignment",  props["justification"])
 
-    if (props["duration"] or props["start"]) and self.anno_controller:
+    if (props["duration"] or props["start"]) and ctlr:
         dur   = int(round(float(props["duration"]) * gst.SECOND))
         start = int(round(float(props["start"]) * gst.SECOND))
     
-        self.anno_controller.set_interpolation_mode("silent", gst.INTERPOLATE_NONE)
+        ctlr.set_interpolation_mode("silent", gst.INTERPOLATE_NONE)
         
         if start > 0:
-            self.anno_controller.set("silent", 0,     1)
-            self.anno_controller.set("silent", start, 0)
+            ctlr.set("silent", 0,     1)
+            ctlr.set("silent", start, 0)
         else:
-            self.anno_controller.set("silent", 0,     0)
+            ctlr.set("silent", 0,     0)
         if dur > 0:
-            self.anno_controller.set("silent", start+dur,   1)
+            ctlr.set("silent", start+dur,   1)
+
+    # save off a reference to the controller so that it does not pop
+    # off the the stack and dissapear.
+    if not(hasattr(self, "annotation_controllers")):
+        self.annotation_controllers = []
+    self.annotation_controllers.append(ctlr)

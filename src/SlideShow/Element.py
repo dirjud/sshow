@@ -13,7 +13,12 @@ def get_rgb(x):
         b = int(x[5:7],16)
     return r,g,b
 
+colorLU = { "black":"#000000", "white":"#FFFFFF", "red":"#FF0000", "green":"#00FF00", "blue":"#0000FF", "orange":"#F37022", "purple":"#FF00FF", "yellow":"#FFFF00", "cyan":"#00FFFF", "magenta":"#FF00FF" }
+
 def get_color(x):
+    if colorLU.has_key(x):
+        x = colorLU[x]
+
     a = r = g = b = 0xFF
     
     if type(x) is str and x[0] == "#":
@@ -25,11 +30,13 @@ def get_color(x):
     return (a << 24) | (r << 16) | (g << 8) | b
 
 def get_dims(img_file):
-    d = gst.parse_launch("filesrc location="+img_file+" ! decodebin2 name=decoder ! fakesink")
-    d.set_state(gst.STATE_PLAYING)
-    d.get_state() # blocks until state transition has finished
-    caps = d.get_by_name("decoder").src_pads().next().get_caps()[0]
-    return caps["width"], caps["height"]
+    import commands
+    return map(int, commands.getoutput('identify -format "%w %h" '+img_file).split())
+    #d = gst.parse_launch("filesrc location="+img_file+" ! decodebin2 name=decoder ! fakesink")
+    #d.set_state(gst.STATE_PLAYING)
+    #d.get_state() # blocks until state transition has finished
+    #caps = d.get_by_name("decoder").src_pads().next().get_caps()[0]
+    #return caps["width"], caps["height"]
 
 def get_duration(filename):
     d = gst.parse_launch("filesrc location="+filename+" ! decodebin2 ! fakesink")
@@ -111,7 +118,6 @@ class Image(Element):
     def initialize(self):
         if not(os.path.exists(self.filename)):
             raise Exception("Image "+self.filename+" does not exist.")
-        self.width, self.height = get_dims(self.filename)
 
     def __str__(self):
         x = "%s:%g:%s" % (encode(self.filename), dur2flt(self.duration), encode(self.subtitle))
@@ -123,6 +129,7 @@ class Image(Element):
     def get_bin(self, background, duration=None):
         if duration is None:
             duration = self.duration
+        self.width, self.height = get_dims(self.filename)
 
         fx_names = [ x.name for x in self.effects ]
 
@@ -138,9 +145,13 @@ class Image(Element):
             elements.append(annotate)
             Annotate.parse_annotate_params(self, annotate, self.effects[fx_names.index("annotate")].param, duration)
 
+        if self.config["subtitle_type"] == "render" and self.subtitle:
+            subtitle = gst.element_factory_make("textoverlay")
+            elements.append(subtitle)
+            Annotate.add_subtitle(self, subtitle, self.subtitle, self.config)
+
         caps = gst.element_factory_make("capsfilter")
         elements.append(caps)
-        
 
         filesrc.set_property("location",  self.filename)
         kenburns.set_property("duration", duration)
@@ -152,7 +163,7 @@ class Image(Element):
         gst.element_link_many(*elements[2:])
 
         if 1:
-            mixer  = gst.element_factory_make("videomixer")
+            mixer  = gst.element_factory_make("videomixer2")
             bg_bin = background.get_bin()
             bin.add(mixer, bg_bin)
             bg_bin.link(mixer)
@@ -242,15 +253,15 @@ class Image(Element):
 ################################################################################
 class Background(Element):
     names = ['background',]
-    colors = ['black','white','red','green','blue','orange','purple','yellow', 'cyan', 'magenta']
+    colors = colorLU.keys()
 
-    def __init__(self, location, name, duration, subtitle, background):
+    def __init__(self, location, name, duration, subtitle, background, effects=[]):
         Element.__init__(self, location)
         self.name = name
         self.duration = duration
         self.subtitle = subtitle
         self.bg = background
-        self.effects = []
+        self.effects = effects
 
         if(self.bg == "" and self.duration <= 0): # blank bg means use the last one
             raise Exception("Cannot specify a 0 duration and no background file or color")
@@ -278,33 +289,39 @@ class Background(Element):
         elif(os.path.exists(self.bg)):
             return get_bg_image_bin(self)
         elif(self.bg in Background.colors):
-            bgcolor = { "black":"#000000", "white":"#FFFFFF", "red":"#FF0000", "green":"#00FF00", "blue":"#0000FF", "orange":"#F37022", "purple":"#FF00FF", "yellow":"#FFFF00", "cyan":"#00FFFF", "magenta":"#FF00FF" }[self.bg]
-            return self.get_bg_color_bin(bgcolor)
+            return self.get_bg_color_bin(colorLU[self.bg])
         elif(self.bg[0] == "#"):
             return self.get_bg_color_bin(self.bg)
 
     def get_bg_color_bin(self, bgcolor):
+        elements=[]
         src  = gst.element_factory_make("videotestsrc")
         src.props.pattern = "white"
         src.props.foreground_color = get_color(bgcolor)
+        elements.append(src)
+        if self.config["subtitle_type"] == "render" and self.subtitle:
+            subtitle = gst.element_factory_make("textoverlay")
+            Annotate.add_subtitle(self, subtitle, self.subtitle, self.config)
+            elements.append(subtitle)
         caps = gst.element_factory_make("capsfilter")
         caps.props.caps = self.config.get_video_caps("AYUV")
+        elements.append(caps)
         bin = gst.Bin()
-        bin.add(src, caps)
-        src.link(caps)
-        bin.add_pad(gst.GhostPad("src", caps.get_pad("src")))
+        bin.add(*elements)
+        gst.element_link_many(*elements)
+        bin.add_pad(gst.GhostPad("src", elements[-1].get_pad("src")))
         return bin        
 
 ################################################################################
 class Title(Element):
     names = ["title", "titlebar"]
-    def __init__(self, location, name, duration, title1, title2):
+    def __init__(self, location, name, duration, title1, title2, effects):
         Element.__init__(self, location)
         self.name = name
         self.duration = duration
         self.title1 = title1
         self.title2 = title2
-        self.effects = []
+        self.effects = effects
         if not(self.title1):
             raise Exception("No title text found.")
 
@@ -314,17 +331,29 @@ class Title(Element):
     def get_bin(self, background, duration=None):
         if duration is None:
             duration = self.duration
-        bg_bin = background.get_bin()
 
-        textoverlay = gst.element_factory_make("textoverlay")
-        Annotate.parse_annotate_params(self, textoverlay, "text=%s;ypos=0.5;xpos=0.5" % self.title1, duration)
+        elements = [ background.get_bin() ]
+        if self.name == "titlebar":
+            if self.title1:
+                textoverlay = gst.element_factory_make("textoverlay")
+                Annotate.add_title(self, textoverlay, self.title1, "top_title", self.config)
+                elements.append(textoverlay)
+            if self.title2:
+                textoverlay = gst.element_factory_make("textoverlay")
+                Annotate.add_title(self, textoverlay, self.title2, "bottom_title", self.config)
+                elements.append(textoverlay)
+        else:
+            textoverlay = gst.element_factory_make("textoverlay")
+            Annotate.add_title(self, textoverlay, self.title1, "title", self.config)
+            elements.append(textoverlay)
+
         caps        = gst.element_factory_make("capsfilter")
         caps.set_property("caps", self.config.get_video_caps("AYUV"))
-    
+        elements.append(caps)
         bin = gst.Bin()
-        bin.add(bg_bin, textoverlay, caps)
-        gst.element_link_many(bg_bin, textoverlay, caps)
-        bin.add_pad(gst.GhostPad("src", caps.get_pad("src")))
+        bin.add(*elements)
+        gst.element_link_many(*elements)
+        bin.add_pad(gst.GhostPad("src", elements[-1].get_pad("src")))
         return bin
         
 
@@ -468,17 +497,20 @@ class Silence(Audio):
         return bin
 
 class TestVideo(Element):
-    names = "testvideo"
-    def __init__(self, location, name, duration, pattern):
+    names = [ "testvideo", ]
+    def __init__(self, location, name, duration, subtitle, pattern, effects=[]):
         Element.__init__(self, location)
         self.name = name
         self.duration = duration
         self.pattern = pattern
+        self.subtitle = subtitle
+        self.effects = effects
         
     def get_bin(self, background=None, duration=None):
         if duration is None:
             duration = self.duration
 
+        elements = []
         bin = gst.Bin()
         src = gst.element_factory_make("videotestsrc")
         if self.pattern:
@@ -486,61 +518,27 @@ class TestVideo(Element):
                 src.props.pattern = self.pattern
             except:
                 raise Exception("Error setting specified test pattern.")
+        elements.append(src)
+        if self.config["subtitle_type"] == "render" and self.subtitle:
+            subtitle = gst.element_factory_make("textoverlay")
+            elements.append(subtitle)
+            Annotate.add_subtitle(self, subtitle, self.subtitle, self.config)
         caps = gst.element_factory_make("capsfilter")
         caps.props.caps = self.config.get_video_caps("AYUV")
-        bin.add(src, caps)
-        src.link(caps)
-        bin.add_pad(gst.GhostPad("src", caps.get_pad("src")))
+        elements.append(caps)
+        bin.add(*elements)
+        gst.element_link_many(*elements)
+        bin.add_pad(gst.GhostPad("src", elements[-1].get_pad("src")))
         return bin
 
+class Chapter(Element):
+    names = [ "chapter", ]
+    def __init__(self, location):
+        Element.__init__(self, location)
+
+    def __str__(self):
+        return "chapter"
     
-    
-#        elif image[-1] == 'musictitle':
-#            types.append("musictitle")
-#            ensure_not_zero_duration(duration[-1])
-#            duration_ms = int(duration[-1]*1000)
-#            total_video_length += duration_ms
-#    #    elif [ "`echo $file | tr -d \[:blank:\]`" == 'chapter' ] ; then   # CHAPTER
-#    #		image_file[$i]=0 ; audio_file[$i]=0 ; avi_file[$i]=0
-#    #		duration[$i]=0;
-#    #		duration_ms=`seconds2ms ${duration[$i]}`
-#    ##		total_video_length="$(( $total_video_length + $duration_ms ))"
-#        elif filetype[-1] == 'avi':
-#            types.append("video")
-#            ### need to get the length of the video here and set the duration
-#            ### so the audio is the correct length!
-#            checkforprog("tcprobe")
-#    		#if [ -n "${duration[$i]}" ] ; then
-#    		#	# user specified something in duration field:
-#    		#	if [ "${duration[$i]}" == 'noaudio' ] ; then
-#    		#		# do not use audio contained in video
-#    		#		audio_track[$i]='noaudio'
-#    		#	else
-#    		#		audio_track[$i]='audio'
-#    		#	fi
-#    		#fi
-#    		#effect1[$i]=`echo "${thisline}" | cut -s -d: -f3 | awk -F' #' '{print $1}'`  
-#    		#effect1_params[$i]=`echo "${thisline}" | cut -s -d: -f4 | awk -F' #' '{print $1}' | tr -d \[:blank:\]`
-#    		#effect2[$i]=`echo "${thisline}" | cut -s -d: -f5 | awk -F' #' '{print $1}'`
-#    		#effect2_params[$i]=`echo "${thisline}" | cut -s -d: -f6 | awk -F' #' '{print $1}' | tr -d \[:blank:\]`
-#            	#video_length=`tcprobe -i "${image[$i]}" 2> /dev/null | grep 'duration=' | awk -F'duration=' '{print $2}'`
-#    		#it=`hms2seconds "$video_length"`
-#    		#duration_ms=`seconds2ms $it`
-#    		#duration[$i]="`hms2seconds $video_length`"
-#    		#total_video_length="$(( $total_video_length + $duration_ms ))"
-#    		#echo ""
-#            	#myecho "[dvd-slideshow] Found AVI video ${image[$i]} length=$video_length duration=${duration[$i]}"
-#    		#myechon "[dvd-slideshow] "
-#    		### optionally copy images to new directory for backup onto dvd:
-#    		#newname=`echo "${slideshow_name}" | sed -e 's/ /_/g'`
-#    		#if [ "$copy" -eq 1 ] ; then
-#    		#	mkdir -p "$outdir/$newname"_pics
-#    		#fi
-#    		#if [ "$copy" -eq 1 ] ; then
-#    		#	cp -af "${image[$i]}" "$outdir/$newname"_pics
-#    		#fi
-#    		#moviefiles=$(( $moviefiles + 1 ))
-#        else:
-#            duration_ms = int(duration[-1]*1000)
-#            total_video_length += duration_ms
-#    
+#    elif image[-1] == 'musictitle':
+#    elif [ "`echo $file | tr -d \[:blank:\]`" == 'chapter' ] ; then   # CH
+#    elif filetype[-1] == 'avi':

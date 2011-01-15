@@ -17,6 +17,7 @@ if frontend is None:
     
 backend  = SlideShow.get_encoder_backend(config, info["num_audio_tracks"])
 pipeline = SlideShow.get_gst_pipeline(frontend, backend)
+SlideShow.dump_xml(info, config)
 
 class Progress(threading.Thread):
     def __init__(self, pipeline, loop, time0):

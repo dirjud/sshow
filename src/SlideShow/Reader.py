@@ -155,6 +155,8 @@ class DVDSlideshow():
             return DVDSlideshow.getImage(location, element, extension, fields)
         elif element in Element.Silence.names:
             return DVDSlideshow.getSilence(location, element, fields)
+        elif element in Element.Chapter.names:
+            return DVDSlideshow.getChapter(location, element, fields)
         elif element in Element.TestVideo.names:
             return DVDSlideshow.getTestVideo(location, element, fields)
         elif extension in Element.Audio.extensions:
@@ -190,34 +192,42 @@ class DVDSlideshow():
         return int(round(dur * gst.SECOND))
 
     @staticmethod
+    def parse_effects(fields):
+        effects = []
+        while fields:
+            effects.append(Element.Effect(DVDSlideshow.pop(fields), DVDSlideshow.pop(fields)))
+        return effects
+        
+    
+    @staticmethod
     def getBackground(location, name, fields):
         duration = DVDSlideshow.parse_duration(DVDSlideshow.pop(fields), allow_zero=True)
         subtitle = DVDSlideshow.pop(fields)
         background = DVDSlideshow.pop(fields)
-        return Element.Background(location, name, duration, subtitle, background)
+        effects = DVDSlideshow.parse_effects(fields)
+        return Element.Background(location, name, duration, subtitle, background, effects)
 
     
     @staticmethod
     def getImage(location, filename, extension, fields):
         duration = DVDSlideshow.parse_duration(DVDSlideshow.pop(fields),allow_zero=True)
         subtitle = DVDSlideshow.pop(fields)
-        effects = []
-        while fields:
-            effects.append(Element.Effect(DVDSlideshow.pop(fields), DVDSlideshow.pop(fields)))
-
+        effects = DVDSlideshow.parse_effects(fields)
         return Element.Image(location, filename, extension, duration, subtitle, effects)
-    
+
     @staticmethod
     def getTitle(location, name, fields):
         duration = DVDSlideshow.parse_duration(DVDSlideshow.pop(fields))
         title1 = DVDSlideshow.pop(fields)
         title2 = DVDSlideshow.pop(fields)
-        return Element.Title(location, name, duration, title1, title2)
+        effects = DVDSlideshow.parse_effects(fields)
+        return Element.Title(location, name, duration, title1, title2, effects)
 
     @staticmethod
     def getTransition(location, name, fields):
         d = DVDSlideshow.pop(fields)
         duration = DVDSlideshow.parse_duration(d)
+        effects = DVDSlideshow.parse_effects(fields)
         return Element.Transition(location, name, duration)
 
     @staticmethod
@@ -248,11 +258,17 @@ class DVDSlideshow():
         return Element.Silence(location, name, track)
 
     @staticmethod
+    def getChapter(location, name, fields):
+        return Element.Chapter(location)
+
+    @staticmethod
     def getTestVideo(location, name, fields):
         duration = DVDSlideshow.parse_duration(DVDSlideshow.pop(fields),allow_zero=True)
+        subtitle = DVDSlideshow.pop(fields)
         keyvals = DVDSlideshow.parse_key_values(DVDSlideshow.pop(fields))
         pattern = keyvals.get("pattern", "")
-        return Element.TestVideo(location, name, duration, pattern)
+        effects = DVDSlideshow.parse_effects(fields)
+        return Element.TestVideo(location, name, duration, subtitle, pattern, effects)
 
     @staticmethod
     def parse_key_values(field):

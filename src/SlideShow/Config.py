@@ -33,27 +33,26 @@ class Config(dict):
             subtitle_color="white",
             subtitle_outline_color="black",
             subtitle_location="bottom", # or "top"
-            subtitle_location_x=0,
-            subtitle_location_y=105,
             
             ## Title
             title_font_size=48,
-            title_font_color='black',  # or use hex "#RRGGBB"
+            title_font_color='white',  # or use hex "#RRGGBB"
             
             ## top title
             toptitle_font_size=48,
             toptitle_font_color='black', # or use hex "#RRGGBB"
             toptitle_bar_height=125,  # 0 for no 50% white behind text
-            toptitle_text_location_x=80,
-            toptitle_text_location_y=50,
+            toptitle_text_location_x=0.15,
+            toptitle_text_location_y=0.25,
+            toptitle_text_justification="left",
             
             # bottom title: 
             bottomtitle_font_size=36,
             bottomtitle_font_color="black",  # or use hex "#RRGGBB"
-            bottomtitle_bar_location_y=156, # relative to bottom of image
             bottomtitle_bar_height=55,  # 0 for no 50% white behind text
-            bottomtitle_text_location_x=0,
-            bottomtitle_text_location_y=155,
+            bottomtitle_text_location_x=0.5,
+            bottomtitle_text_location_y=0.65,
+            bottomtitle_text_justification="center",
 
             # annotate
             annotate_size = "8%",
@@ -121,12 +120,13 @@ class Config(dict):
         "toptitle_bar_height"        ,
         "toptitle_text_location_x"   ,
         "toptitle_text_location_y"   ,
+        "toptitle_text_justification",
         "bottomtitle_font_size"      ,
         "bottomtitle_font_color"     ,
-        "bottomtitle_bar_location_y" ,
         "bottomtitle_bar_height"     ,
         "bottomtitle_text_location_x",
         "bottomtitle_text_location_y",
+        "bottomtitle_text_justification",
         "annotate_size"              ,
         "annotate_font"              ,
         "annotate_fontstyle"         ,
@@ -161,10 +161,13 @@ class Config(dict):
     def set_var(self, key, val):
         self[key] = val
 
-    def get_video_caps(self, fourcc="AYUV"):
+    def get_video_caps(self, fourcc="AYUV", width=None, height=None):
         """returns a gst.Caps with the configured caps. Set the fourcc 
         argument to specify a desired format, otherwise leave it None"""
-        caps = self["video_caps"] + ",format=(fourcc)"+fourcc
+        if width  is None: width  = self["width"]
+        if height is None: height = self["height"]
+
+        caps = "video/x-raw-yuv,width=%d,height=%d,framerate=(fraction)%d/%d,format=(fourcc)%s" % (width, height, self["framerate_numer"], self["framerate_denom"], fourcc)
         return gst.Caps(caps)
 
     def get_audio_caps(self):
@@ -176,7 +179,7 @@ class Config(dict):
         """Updates this config with variables passed on the command line"""
 
         self.parser = parser = optparse.OptionParser()
-        parser.add_option("-o", "--outdir",    dest="outdir", default=None, help="Directory where work directory, the final .vob, and dvdauthor .xml files will be written.  Default is to write in the directory where sshow was run.")
+        parser.add_option("-o", "--outdir",    dest="outdir", default=None, help="Directory where the final .vob, and dvdauthor .xml files will be written.  Default is to write in the directory where sshow was run.")
         parser.add_option("--themes",          dest="print_themes", action="store_true", default=False, help="print available themes")
         
         parser.add_option("-p", "--pal",       dest="pal",      action="store_true", default=None, help="Use PAL output video format instead of NTSC")
