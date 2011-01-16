@@ -152,7 +152,9 @@ class DVDSlideshow():
 
         
         if extension in Element.Image.extensions:
-            return DVDSlideshow.getImage(location, element, extension, fields)
+            return DVDSlideshow.getImage(location, element, fields)
+        elif extension in Element.Video.extensions:
+            return DVDSlideshow.getVideo(location, element, fields)
         elif element in Element.Silence.names:
             return DVDSlideshow.getSilence(location, element, fields)
         elif element in Element.Chapter.names:
@@ -160,7 +162,7 @@ class DVDSlideshow():
         elif element in Element.TestVideo.names:
             return DVDSlideshow.getTestVideo(location, element, fields)
         elif extension in Element.Audio.extensions:
-            return DVDSlideshow.getAudio(location, element, extension, fields)
+            return DVDSlideshow.getAudio(location, element, fields)
         elif element in Element.Transition.names:
             return DVDSlideshow.getTransition(location, element, fields)
         elif element in Element.Title.names:
@@ -209,11 +211,18 @@ class DVDSlideshow():
 
     
     @staticmethod
-    def getImage(location, filename, extension, fields):
+    def getImage(location, filename, fields):
         duration = DVDSlideshow.parse_duration(DVDSlideshow.pop(fields),allow_zero=True)
         subtitle = DVDSlideshow.pop(fields)
         effects = DVDSlideshow.parse_effects(fields)
-        return Element.Image(location, filename, extension, duration, subtitle, effects)
+        return Element.Image(location, filename, duration, subtitle, effects)
+
+    @staticmethod
+    def getVideo(location, filename, fields):
+        duration = DVDSlideshow.parse_duration(DVDSlideshow.pop(fields),allow_zero=True)
+        subtitle = DVDSlideshow.pop(fields)
+        effects = DVDSlideshow.parse_effects(fields)
+        return Element.Video(location, filename, duration, subtitle, effects)
 
     @staticmethod
     def getTitle(location, name, fields):
@@ -242,7 +251,7 @@ class DVDSlideshow():
         return track
 
     @staticmethod
-    def getAudio(location, filename, extension, fields):
+    def getAudio(location, filename, fields):
         track = DVDSlideshow.parse_track(DVDSlideshow.pop(fields))
         effects = []
         while fields:
@@ -250,7 +259,7 @@ class DVDSlideshow():
             if(name):
                 effects.append(Element.Effect(name, eval(DVDSlideshow.pop(fields))))
             
-        return Element.Audio(location, filename, extension, track, effects)
+        return Element.Audio(location, filename, track, effects)
 
     @staticmethod
     def getSilence(location, name, fields):

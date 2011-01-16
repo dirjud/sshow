@@ -103,12 +103,11 @@ class Config(Element):
 
 ################################################################################
 class Image(Element):
-    extensions = ['jpg', 'png', 'jpeg' ]
-    def __init__(self, location, filename, extension, duration, subtitle, effects):
+    extensions = ['jpg', 'png', 'jpeg', "bmp", "gif", ]
+    def __init__(self, location, filename, duration, subtitle, effects):
         Element.__init__(self, location)
-        self.name      = os.path.basename(filename).replace("."+extension,"")
+        self.name      = os.path.basename(filename)
         self.filename  = filename
-        self.extension = extension
         self.duration  = duration
         self.subtitle  = subtitle
         self.effects   = effects
@@ -163,7 +162,7 @@ class Image(Element):
         gst.element_link_many(*elements[2:])
 
         if 1:
-            mixer  = gst.element_factory_make("videomixer2")
+            mixer  = gst.element_factory_make(self.config["videomixer"])
             bg_bin = background.get_bin()
             bin.add(mixer, bg_bin)
             bg_bin.link(mixer)
@@ -389,14 +388,13 @@ class Transition(Element):
 class Audio(Element):
     extensions = [ 'ogg', 'mp3', 'wav', 'm4a', 'aac' ]
 
-    def __init__(self, location, filename, extension, track, effects):
+    def __init__(self, location, filename, track, effects):
         Element.__init__(self, location)
         if not(os.path.exists(filename)):
             raise Exception("Audio file "+filename+" does not exist.")
 
-        self.name     = os.path.basename(filename).replace("."+extension,"")
+        self.name     = os.path.basename(filename)
         self.filename = filename
-        self.extension = extension
         self.track = track
         self.effects= effects
 
@@ -539,6 +537,56 @@ class Chapter(Element):
     def __str__(self):
         return "chapter"
     
+class Video(Element):
+    extensions = [ "avi", "mp4", "mpg", "vob" ]
+
+    def __init__(self, location, filename, duration, subtitle, effects):
+        Element.__init__(self, location)
+        self.name     = os.path.basename(filename)
+        self.filename = filename
+        self.duration = duration
+        self.subtitle = subtitle
+        self.effects  = effects
+        
+    def initialize(self):
+        self.duration = get_duration(self.filename)
+
+    def get_bin(self, background=None, duration=None):
+        if duration is None:
+            duration = self.duration
+
+        elements = []
+        bin = gst.Bin()
+        capnum = 1
+        for name in [ "filesrc", "decodebin2", "videorate", "capsfilter", "ffmpegcolorspace", "capsfilter", "videoscale", "capsfilter",  ]:
+            elements.append(gst.element_factory_make(name))
+            if name == "capsfilter":
+                exec( "cap"+str(capnum)+"=elements[-1]")
+                capnum += 1
+            else:
+                exec( name + "=elements[-1]")
+        
+        cap1.props.caps = gst.Caps("video/x-raw-yuv,framerate=(fraction)%d/%d" % (self.config["framerate_numer"], self.config["framerate_denom"]))
+        cap2.props.caps = gst.Caps("video/x-raw-yuv,format=(fourcc)AYUV")
+        cap3.props.caps = self.config.get_video_caps("AYUV")
+        videoscale.props.add_borders = True
+        filesrc.props.location = self.filename
+
+        bin.add(*elements)
+        gst.element_link_many(*elements[2:])
+        filesrc.link(decodebin2)
+        
+        def on_pad(src_element, pad, data, sink_element):
+            sinkpad = sink_element.get_compatible_pad(pad, pad.get_caps())
+            if sinkpad:
+                pad.link(sinkpad)
+
+        decodebin2.connect("new-decoded-pad", on_pad, elements[2])
+
+        bin.add_pad(gst.GhostPad("src", elements[-1].get_pad("src")))
+        return bin
+
+
+
+
 #    elif image[-1] == 'musictitle':
-#    elif [ "`echo $file | tr -d \[:blank:\]`" == 'chapter' ] ; then   # CH
-#    elif filetype[-1] == 'avi':

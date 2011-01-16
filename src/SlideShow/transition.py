@@ -13,7 +13,7 @@ def get_alpha_transition(config, element="alpha"):
     bin = gst.Bin()
     alpha1 = gst.element_factory_make("alpha", "alpha1")
     alpha2 = gst.element_factory_make(element,  "alpha2")
-    mixer  = gst.element_factory_make("videomixer2")
+    mixer  = gst.element_factory_make(config["videomixer"])
     #color  = gst.element_factory_make("ffmpegcolorspace")
     caps   = gst.element_factory_make("capsfilter")
     caps.props.caps = config.get_video_caps("AYUV")
@@ -138,7 +138,7 @@ def get_kenburns_bin(name, config, duration):
     bin = gst.Bin()
     kb1 = gst.element_factory_make("kenburns")
     kb2 = gst.element_factory_make("kenburns")
-    mixer  = gst.element_factory_make("videomixer2")
+    mixer  = gst.element_factory_make(config["videomixer"])
     mixer.props.background = "black"
     caps   = gst.element_factory_make("capsfilter")
     caps.props.caps = config.get_video_caps("AYUV")

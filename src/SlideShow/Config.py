@@ -98,6 +98,12 @@ class Config(dict):
 
             )
         self.update(defaults)
+        
+        if gst.element_factory_find("videomixer2"):
+            self["videomixer"] = "videomixer2"
+        else:
+            self["videomixer"] = "videomixer"
+
 
     vars = [
         "debug"             ,

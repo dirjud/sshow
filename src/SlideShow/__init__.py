@@ -4,7 +4,7 @@ import Reader, Config
 log = logging.getLogger(__name__)
 
 def check_system():
-    for element in [ "gnlcomposition", "kenburns", "videomixer2", "textoverlay", "imagefreeze", "alpha", ]:
+    for element in [ "gnlcomposition", "kenburns", "videomixer", "textoverlay", "imagefreeze", "alpha", ]:
         if gst.element_factory_find(element) is None:
             raise Exception("Gstreamer element '%s' is not installed. Please install the appropriate gstreamer plugin and try again." % (element,))
 
@@ -64,7 +64,7 @@ def set_font(config, name):
 
 ################################################################################
 def isSlide(element):
-    return element.isa("Image") or (element.isa("Background") and element.duration > 0) or element.isa("Title") or element.isa("TestVideo")
+    return element.isa("Image") or (element.isa("Background") and element.duration > 0) or element.isa("Title") or element.isa("TestVideo") or element.isa("Video")
 
 def nextSlide(pos, elements):
     for element in elements[pos+1:]:
@@ -307,7 +307,7 @@ def initialize_elements(elements, config):
 
     
     framerate_numer = 30000 #int(round(config["framerate"] * 100))
-    framerate_denom = 1001 # 1001
+    framerate_denom = 1000 # 1001
     config["framerate"] = framerate_numer / float(framerate_denom)
     config["framerate_numer"] = framerate_numer
     config["framerate_denom"] = framerate_denom
@@ -375,7 +375,7 @@ def initialize_elements(elements, config):
                     raise Exception("no next slide found to fadein to!")
                 if isNextTransition(pos, elements):
                     raise Exception("Cannot fadein to another transition!")
-            elif element.isa("Transition") and element.name in [ 'crossfade', 'wipe' ]:
+            elif element.isa("Transition") and not(element.name in [ 'fadein', 'fadeout' ]):
                 try:
                     next_slide = nextSlide(pos, elements)
                 except:
@@ -385,7 +385,7 @@ def initialize_elements(elements, config):
                 except:
                     raise Exception("No previous slide to "+element.name+" to!")
                 if isNextTransition(pos, elements):
-                    raise Exception("Cannot "+element.name+" to another transition!")
+                    raise Exception("Cannot use transition "+element.name+" to another transition!")
             elif element.isa("Transition") and element.name == 'fadeout':
                 try:
                     prevSlide(pos, elements)
@@ -720,12 +720,13 @@ def get_encoder_backend(config, num_audio_tracks):
     #video_queue.props.max_size_bytes   = 0
     #video_queue.props.max_size_buffers = 0
 
-    if 0:
+    if 1:
         video_caps2.props.caps = config.get_video_caps("I420")
         video_enc = gst.element_factory_make("ffenc_mpeg4", "encoder")
         video_enc.props.bitrate = config["video_bitrate"] * 1000
         mux = gst.element_factory_make("mp4mux", "mux")
         extension = "mp4"
+        config["ac3"] = False # this mux can't handle ac3
     elif 0:
         video_caps2.props.caps = config.get_video_caps("I420")
         video_enc = gst.element_factory_make("x264enc",    "video_enc")
