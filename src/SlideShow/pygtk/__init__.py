@@ -308,6 +308,6 @@ class SlideShowApp(object):
         return elements
 
     def update_preview(self):
-        frontend = SlideShow.get_frontend(self.get_elements(), self.config)
-        self.preview.set_frontend(frontend, self.config)
+        frontend,info = SlideShow.get_frontend(self.get_elements(), self.config)
+        self.preview.set_frontend(frontend, info, self.config)
         self.preview.pause()

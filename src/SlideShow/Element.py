@@ -1,6 +1,6 @@
 import os, subprocess, hashlib, time, sys, gst
 import logging
-import transition, Annotate
+import transition, Annotate, KenBurns
 
 log = logging.getLogger(__name__)
 
@@ -139,11 +139,7 @@ class Image(Element):
             elements.append(gst.element_factory_make(name))
             exec("%s = elements[-1]" % name)
 
-        annotate = None
-        if "annotate" in fx_names:
-            annotate = gst.element_factory_make("textoverlay")
-            elements.append(annotate)
-            Annotate.parse_annotate_params(self, annotate, self.effects[fx_names.index("annotate")].param, duration)
+        Annotate.add_annotations(self, duration, elements)
 
         if self.config["subtitle_type"] == "render" and self.subtitle:
             subtitle = gst.element_factory_make("textoverlay")
@@ -169,24 +165,7 @@ class Image(Element):
             elements[-1].link(mixer)
             elements.append(mixer)
 
-        if("kenburns" in fx_names):
-            i = fx_names.index("kenburns")
-            param = self.effects[i].param
-            zstart, pstart, zend, pend = map(str.strip, param.split(";"))
-            zpos1, xpos1, ypos1 = self.parse_kb_params(zstart, pstart)
-            zpos2, xpos2, ypos2 = self.parse_kb_params(zend,   pend)
-            c = gst.Controller(kenburns, "zpos", "ypos", "xpos")
-            c.set_interpolation_mode("xpos", gst.INTERPOLATE_LINEAR)
-            c.set_interpolation_mode("ypos", gst.INTERPOLATE_LINEAR)
-            c.set_interpolation_mode("zpos", gst.INTERPOLATE_LINEAR)
-            c.set("zpos", 0,        zpos1)
-            c.set("zpos", duration, zpos2)
-            c.set("xpos", 0,        xpos1)
-            c.set("xpos", duration, xpos2)
-            c.set("ypos", 0,        ypos1)
-            c.set("ypos", duration, ypos2)
-            print zpos1, zpos2, xpos1, xpos2, ypos1, ypos2
-            self.controllers.append(c)
+        KenBurns.configure_kenburns(self, kenburns, duration)
 
         def on_pad(src_element, pad, data, sink_element):
             sinkpad = sink_element.get_compatible_pad(pad, pad.get_caps())
@@ -197,56 +176,6 @@ class Image(Element):
         return bin
 
 
-    def parse_kb_params(self, zoom, pos):
-        img_ratio = self.width / float(self.height)
-        vid_ratio = self.config["aspect_ratio_float"]
-
-        if(img_ratio > vid_ratio):
-            src_width = self.width
-            src_height = int(round(src_width / vid_ratio))
-        else:
-            src_height = self.height
-            src_width = int(round(src_height * vid_ratio))
-
-        if zoom == "imagewidth":
-            z = self.width / float(src_width)
-        elif zoom == "imageheight":
-            z = self.height / float(src_height)
-        elif(zoom.endswith("%")):
-            z = eval(zoom.replace("%",""))/100.
-        else:
-            raise Exception("Unknown kenburns zoom parameter '%s'" % (zoom, ))
-
-        if pos[:3] in ["top", "bot", "lef", "rig", "mid"]:
-            if pos.find("bottom") > -1:
-                yc = (src_height - self.height)/2. - (src_height  * z)/2 + self.height
-            elif pos.find("top") > -1:
-                yc = (src_height - self.height)/2. + (src_height  * z)/2
-            else:
-                yc = src_height / 2.
-            
-            if pos.find("left") > -1:
-                xc = (src_width - self.width)/2. + (src_width  * z)/2
-            elif pos.find("right") > -1:
-                xc = (src_width - self.width)/2. - (src_width  * z)/2 + self.width
-            else:
-                xc = src_width / 2.
-
-            xcenter = xc / float(src_width)
-            ycenter = yc / float(src_height)
-        else:
-            xcp,ycp = map(str.strip, pos.split(","))
-            if(xcp.find("%")>-1):
-                xcenter = eval(xcp.replace("%","")) / 100.
-            else:
-                xcenter = eval(xcp) / float(src_width)
-    
-            if(ycp.find("%")>-1):
-                ycenter = eval(ycp.replace("%","")) / 100.
-            else:
-                ycenter = eval(ycp) / float(src_height)
-    
-        return (z, (xcenter-0.5)*2, (ycenter-0.5)*2)
 
 ################################################################################
 class Background(Element):
@@ -301,6 +230,8 @@ class Background(Element):
             subtitle = gst.element_factory_make("textoverlay")
             Annotate.add_subtitle(self, subtitle, self.subtitle, self.config)
             elements.append(subtitle)
+        if(self.duration):
+            Annotate.add_annotations(self, self.duration, elements)
         caps = gst.element_factory_make("capsfilter")
         caps.props.caps = self.config.get_video_caps("AYUV")
         elements.append(caps)
@@ -345,9 +276,8 @@ class Title(Element):
             Annotate.add_title(self, textoverlay, self.title1, "title", self.config)
             elements.append(textoverlay)
 
-        #caps        = gst.element_factory_make("capsfilter")
-        #caps.set_property("caps", self.config.get_video_caps("AYUV"))
-        #elements.append(caps)
+        Annotate.add_annotations(self, duration, elements)
+
         bin = gst.Bin()
         bin.add(*elements)
         gst.element_link_many(*elements)
@@ -378,8 +308,8 @@ class Transition(Element):
     def __str__(self):
         return "%s:%g" % (self.name, dur2flt(self.duration))
 
-    def get_bin(self):
-        bin, ctrl = self.get_transition_bin(self.name, self.config, self.duration)
+    def get_bin(self, start1):
+        bin, ctrl = self.get_transition_bin(self.name, self.config, self.duration, start1)
         self.controllers.append(ctrl)
         return bin
 
@@ -522,6 +452,7 @@ class TestVideo(Element):
             subtitle = gst.element_factory_make("textoverlay")
             elements.append(subtitle)
             Annotate.add_subtitle(self, subtitle, self.subtitle, self.config)
+        Annotate.add_annotations(self, duration, elements)
         caps = gst.element_factory_make("capsfilter")
         caps.props.caps = self.config.get_video_caps("AYUV")
         elements.append(caps)
@@ -559,7 +490,7 @@ class Video(Element):
         elements = []
         bin = gst.Bin()
         capnum = 1
-        for name in [ "filesrc", "decodebin2", "videorate", "capsfilter", "ffmpegcolorspace", "capsfilter", "videoscale", "capsfilter",  ]:
+        for name in [ "filesrc", "decodebin2", "videorate", "capsfilter", "ffmpegcolorspace", "capsfilter", "kenburns", "capsfilter",  ]:
             elements.append(gst.element_factory_make(name))
             if name == "capsfilter":
                 exec( "cap"+str(capnum)+"=elements[-1]")
@@ -572,10 +503,12 @@ class Video(Element):
         cap3.props.caps = self.config.get_video_caps("AYUV")
         videoscale.props.add_borders = True
         filesrc.props.location = self.filename
+        Annotate.add_annotations(self, duration, elements)
 
         bin.add(*elements)
         gst.element_link_many(*elements[2:])
         filesrc.link(decodebin2)
+        KenBurns.configure_kenburns(self, kenburns, duration)
         
         def on_pad(src_element, pad, data, sink_element):
             sinkpad = sink_element.get_compatible_pad(pad, pad.get_caps())

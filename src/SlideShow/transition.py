@@ -32,7 +32,7 @@ def get_alpha_transition(config, element="alpha"):
     # deleted before it is even applied
     return bin
 
-def get_crossfade_bin(name, config, duration):
+def get_crossfade_bin(name, config, duration, start1):
     bin = get_alpha_transition(config, element = "alpha")
     alpha = bin.get_by_name("alpha2")
 
@@ -43,7 +43,7 @@ def get_crossfade_bin(name, config, duration):
 
     return bin, controller
 
-def get_smpte_bin(name, config, duration):
+def get_smpte_bin(name, config, duration, start1):
     if(name == "wipe"):
         name = "bar-wipe-lr"
 
@@ -132,9 +132,9 @@ smptes = [
     ]
 
 kenburns = [
-    "swap-lr", "travel-lr", "travel-rl", "travel-tb", "travel-bt", "travel-random",
+    "swap-lr", "swap-rl", "swap-tb", "swap-bt", "swap-random", "border-train-lr", "border-train-rl", "border-train-tb", "border-train-bt", "border-train-random", "train-lr", "train-rl", "train-tb", "train-bt", "train-random", 
 ]
-def get_kenburns_bin(name, config, duration):
+def get_kenburns_bin(name, config, duration, start1):
     bin = gst.Bin()
     kb1 = gst.element_factory_make("kenburns")
     kb2 = gst.element_factory_make("kenburns")
@@ -142,37 +142,53 @@ def get_kenburns_bin(name, config, duration):
     mixer.props.background = "black"
     caps   = gst.element_factory_make("capsfilter")
     caps.props.caps = config.get_video_caps("AYUV")
-
     bin.add(kb1, kb2, mixer, caps)
     kb1.get_pad("src").link(mixer.get_pad("sink_0"))
     kb2.get_pad("src").link(mixer.get_pad("sink_1"))
     mixer.link(caps)
-
     bin.add_pad(gst.GhostPad("sink1", kb1.get_pad("sink")))
     bin.add_pad(gst.GhostPad("sink2", kb2.get_pad("sink")))
     bin.add_pad(gst.GhostPad("src",   caps.get_pad("src")))
 
-    if name == "swap-lr":
+    if name.startswith("swap"):
         c1 = gst.Controller(kb1, "zpos", "xpos", "ypos")
         c1.set_interpolation_mode("zpos", gst.INTERPOLATE_LINEAR)
         c1.set_interpolation_mode("xpos", gst.INTERPOLATE_LINEAR)
         c1.set_interpolation_mode("ypos", gst.INTERPOLATE_LINEAR)
-        c1.set("zpos", 0,        1.0)
-        c1.set("xpos", 0,        0.0)
-        c1.set("zpos", duration, 3.0)
-        c1.set("xpos", duration, -1.0)
+        c1.set("zpos", start1,          1.0)
+        c1.set("xpos", start1,          0.0)
+        c1.set("ypos", start1,          0.0)
+        c1.set("zpos", start1+duration,  3.0)
     
         c2 = gst.Controller(kb2, "zpos", "xpos", "ypos")
         c2.set_interpolation_mode("zpos",    gst.INTERPOLATE_LINEAR)
         c2.set_interpolation_mode("xpos", gst.INTERPOLATE_LINEAR)
         c2.set_interpolation_mode("ypos", gst.INTERPOLATE_LINEAR)
         c2.set("zpos", 0,        3.0)
-        c2.set("xpos", 0,        1.2)
         c2.set("zpos", duration, 1.0)
         c2.set("xpos", duration, 0.0)
+        c2.set("ypos", duration, 0.0)
         ctrls = [c1, c2]
 
-    elif name.startswith("travel"):
+        if name.endswith("random"):
+            name = random.sample(["lr", "rl", "tb", "bt"],1)[0]
+
+        if name.endswith("rl"):
+            c1.set("xpos", start1+duration, -1.0)
+            c2.set("xpos", 0,        1.2)
+        elif name.endswith("lr"):
+            c1.set("xpos", start1+duration, 1.0)
+            c2.set("xpos", 0,        -1.2)
+        elif name.endswith("tb"):
+            c1.set("ypos", start1+duration, -1.0)
+            c2.set("ypos", 0,        1.2)
+        elif name.endswith("bt"):
+            c1.set("ypos", start1+duration, 1.0)
+            c2.set("ypos", 0,        -1.2)
+
+
+
+    elif name.startswith("border-train"):
         c1 = gst.Controller(kb1, "zpos", "xpos", "ypos")
         c1.set_interpolation_mode("zpos", gst.INTERPOLATE_LINEAR)
         c1.set_interpolation_mode("xpos", gst.INTERPOLATE_LINEAR)
@@ -181,13 +197,14 @@ def get_kenburns_bin(name, config, duration):
         c2.set_interpolation_mode("zpos",    gst.INTERPOLATE_LINEAR)
         c2.set_interpolation_mode("xpos", gst.INTERPOLATE_LINEAR)
         c2.set_interpolation_mode("ypos", gst.INTERPOLATE_LINEAR)
+        ctrls = [c1, c2]
 
-        c1.set("zpos", 0,            1.0)
-        c1.set("zpos", duration/4,   1.3)
-        c1.set("xpos", 0,            0.0)
-        c1.set("xpos", duration/4,   0.0)
-        c1.set("ypos", 0,            0.0)
-        c1.set("ypos", duration/4,   0.0)
+        c1.set("zpos", start1+0,            1.0)
+        c1.set("zpos", start1+duration/4,   1.3)
+        c1.set("xpos", start1+0,            0.0)
+        c1.set("xpos", start1+duration/4,   0.0)
+        c1.set("ypos", start1+0,            0.0)
+        c1.set("ypos", start1+duration/4,   0.0)
 
         c2.set("zpos", 0,            1.3)
         c2.set("zpos", duration/4,   1.3)
@@ -201,26 +218,52 @@ def get_kenburns_bin(name, config, duration):
         if name.endswith("random"):
             name = random.sample(["lr","rl","tb","bt"],1)[0]
         if name.endswith("lr"):
-            c1.set("xpos", duration*3/4, 2.0)
-            c2.set("xpos", 0,           -2.0)
-            c2.set("xpos", duration/4,  -2.0)
+            c1.set("xpos", start1+duration*3/4, 2.5)
+            c2.set("xpos", 0,           -2.5)
+            c2.set("xpos", duration/4,  -2.5)
         elif name.endswith("rl"):
-            c1.set("xpos", duration*3/4, -2.0)
-            c2.set("xpos", 0,             2.0)
-            c2.set("xpos", duration/4,    2.0)
+            c1.set("xpos", start1+duration*3/4, -2.5)
+            c2.set("xpos", 0,             2.5)
+            c2.set("xpos", duration/4,    2.5)
         elif name.endswith("tb"):
-            c1.set("ypos", duration*3/4, -2.0)
-            c2.set("ypos", 0,             2.0)
-            c2.set("ypos", duration/4,    2.0)
+            c1.set("ypos", start1+duration*3/4, -2.5)
+            c2.set("ypos", 0,             2.5)
+            c2.set("ypos", duration/4,    2.5)
         elif name.endswith("bt"):
-            c1.set("ypos", duration*3/4, 2.0)
-            c2.set("ypos", 0,           -2.0)
-            c2.set("ypos", duration/4,  -2.0)
-            
+            c1.set("ypos", start1+duration*3/4, 2.5)
+            c2.set("ypos", 0,           -2.5)
+            c2.set("ypos", duration/4,  -2.5)
 
-
-
+    elif name.startswith("train"):
+        c1 = gst.Controller(kb1, "xpos", "ypos")
+        c1.set_interpolation_mode("zpos", gst.INTERPOLATE_LINEAR)
+        c1.set_interpolation_mode("xpos", gst.INTERPOLATE_LINEAR)
+        c1.set_interpolation_mode("ypos", gst.INTERPOLATE_LINEAR)
+        c2 = gst.Controller(kb2, "xpos", "ypos")
+        c2.set_interpolation_mode("zpos", gst.INTERPOLATE_LINEAR)
+        c2.set_interpolation_mode("xpos", gst.INTERPOLATE_LINEAR)
+        c2.set_interpolation_mode("ypos", gst.INTERPOLATE_LINEAR)
         ctrls = [c1, c2]
+
+        c1.set("xpos", start1+0,     0.0)
+        c1.set("ypos", start1+0,     0.0)
+        c2.set("xpos", duration,     0.0)
+        c2.set("ypos", duration,     0.0)
+
+        if name.endswith("random"):
+            name = random.sample(["lr","rl","tb","bt"],1)[0]
+        if name.endswith("lr"):
+            c1.set("xpos", start1+duration, 2.0)
+            c2.set("xpos", 0,       -2.0)
+        elif name.endswith("rl"):
+            c1.set("xpos", start1+duration, -2.0)
+            c2.set("xpos", 0,    2.0)
+        elif name.endswith("tb"):
+            c1.set("ypos", start1+duration, -2.0)
+            c2.set("ypos", 0,    2.0)
+        elif name.endswith("bt"):
+            c1.set("ypos", start1+duration, 2.0)
+            c2.set("ypos", 0,  -2.0)
 
 
     return bin, ctrls

@@ -2,6 +2,14 @@ import gst, gobject, Element
 import logging
 log = logging.getLogger(__name__)
 
+
+def add_annotations(self, duration, elements):
+    for fx in self.effects:
+        if fx.name == "annotate":
+            annotate = gst.element_factory_make("textoverlay")
+            elements.append(annotate)
+            parse_annotate_params(self, annotate, fx.param, duration)
+
 def normalize_font_size(size, config):
     return int(size/480.*config["height"]*2)/10.
 

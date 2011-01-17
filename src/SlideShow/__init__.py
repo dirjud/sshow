@@ -403,11 +403,11 @@ def print_gnlcomp(comp):
     for element in comp.elements():
         print " start=%3.3g dur=%3.3g %s" % (Element.dur2flt(element.props.start), Element.dur2flt(element.props.duration), element.get_name())
 
-def add_transition(element, comp, start_time, config):
+def add_transition(element, comp, start_time, offset1, config):
     dur = element.duration
     
     op = gst.element_factory_make("gnloperation", config.get_unique(element.name))
-    op.add(element.get_bin())
+    op.add(element.get_bin(offset1))
     op.props.start          = start_time - dur/2
     op.props.duration       = dur
     op.props.media_start    = 0
@@ -433,7 +433,7 @@ def get_video_bin(elements, config):
     slide_times = []
     chapter_times = []
     prev_transition = None
-
+    slide_dur = 0
     for pos, element in enumerate(elements):
         try:
             if element.__class__ == Element.Background:
@@ -458,10 +458,12 @@ def get_video_bin(elements, config):
                 if not(next_transition) and config["transition"] and find_next_slide(pos, elements):
                     next_transition = config["transition"]
                     next_transition.set_config(config)
-                    add_transition(next_transition, comp, start_time+element.duration, config)
+                    add_transition(next_transition, comp, start_time+element.duration, dur-next_transition.duration/2, config)
                     
                 if(next_transition):
+                    offset1 = dur
                     dur += next_transition.duration/2
+                    
                 prev_transition = next_transition
     
                 src = gst.element_factory_make("gnlsource", config.get_unique(element.name))
@@ -474,10 +476,11 @@ def get_video_bin(elements, config):
                 comp.add(src)
     
                 priority   += 1
+                slide_dur = dur
                 start_time += element.duration
     
             elif element.isa("Transition"):
-                add_transition(element, comp, start_time, config)
+                add_transition(element, comp, start_time, slide_dur-element.duration, config)
     
             elif element.isa("Audio"):
                 dur   = element.duration

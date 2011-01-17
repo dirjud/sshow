@@ -584,7 +584,7 @@ class ImageSettings(Settings):
                         hb = hb1
 
                         def flt2str(x):
-                            return str(int(round(x)))
+                            return str(int(round(x*10))/10.)
                             #return "%3.2f" % x
 
                         self.drag_state.append(
@@ -647,10 +647,14 @@ class ImageSettings(Settings):
             if check_scale(evt.x, evt.y, self.kb2scale, 2):
                 return True
     
-            if check_move(evt.x, evt.y, self.kb1move, 1):
+            if self.kb1move and self.kb2move and (self.kb2move[0] > self.kb1move[0] and self.kb2move[2] < self.kb1move[2] and self.kb2move[1] > self.kb1move[1] and self.kb2move[3] < self.kb1move[3]):
+                zorder = [2,1]
+            else:
+                zorder = [1,2]
+            if check_move(evt.x, evt.y, eval("self.kb"+str(zorder[0])+"move"), zorder[0]):
                 return True
     
-            if check_move(evt.x, evt.y, self.kb2move, 2):
+            if check_move(evt.x, evt.y, eval("self.kb"+str(zorder[1])+"move"), zorder[1]):
                 return True
             
             self.drag_state = None

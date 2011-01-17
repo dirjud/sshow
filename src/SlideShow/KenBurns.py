@@ -2,6 +2,80 @@ import SlideShow, Element
 import logging, math, os
 log = logging.getLogger(__name__)
 
+
+def configure_kenburns(self, kenburns, duration):
+    import gst
+    for i, fx in enumerate(self.effects):
+        if fx.name == "kenburns":
+            zstart, pstart, zend, pend = map(str.strip, fx.param.split(";"))
+            zpos1, xpos1, ypos1 = parse_kb_params(zstart, pstart, self.config, self.width, self.height)
+            zpos2, xpos2, ypos2 = parse_kb_params(zend,   pend,   self.config, self.width, self.height)
+            c = gst.Controller(kenburns, "zpos", "ypos", "xpos")
+            c.set_interpolation_mode("xpos", gst.INTERPOLATE_LINEAR)
+            c.set_interpolation_mode("ypos", gst.INTERPOLATE_LINEAR)
+            c.set_interpolation_mode("zpos", gst.INTERPOLATE_LINEAR)
+            c.set("zpos", 0,        zpos1)
+            c.set("zpos", duration, zpos2)
+            c.set("xpos", 0,        xpos1)
+            c.set("xpos", duration, xpos2)
+            c.set("ypos", 0,        ypos1)
+            c.set("ypos", duration, ypos2)
+            self.controllers.append(c)
+            #kenburns.props.verbose = 1
+
+
+def parse_kb_params(zoom, pos, config, width, height):
+    img_ratio = width / float(height)
+    vid_ratio = config["aspect_ratio_float"]
+
+    if(img_ratio > vid_ratio):
+        src_width = width
+        src_height = int(round(src_width / vid_ratio))
+    else:
+        src_height = height
+        src_width = int(round(src_height * vid_ratio))
+
+    if zoom == "imagewidth":
+        z = width / float(src_width)
+    elif zoom == "imageheight":
+        z = height / float(src_height)
+    elif(zoom.endswith("%")):
+        z = eval(zoom.replace("%",""))/100.
+    else:
+        raise Exception("Unknown kenburns zoom parameter '%s'" % (zoom, ))
+
+    if pos[:3] in ["top", "bot", "lef", "rig", "mid"]:
+        if pos.find("bottom") > -1:
+            yc = (src_height - height)/2. - (src_height  * z)/2 + height
+        elif pos.find("top") > -1:
+            yc = (src_height - height)/2. + (src_height  * z)/2
+        else:
+            yc = src_height / 2.
+        
+        if pos.find("left") > -1:
+            xc = (src_width - width)/2. + (src_width  * z)/2
+        elif pos.find("right") > -1:
+            xc = (src_width - width)/2. - (src_width  * z)/2 + width
+        else:
+            xc = src_width / 2.
+
+        xcenter = xc / float(src_width)
+        ycenter = yc / float(src_height)
+    else:
+        xcp,ycp = map(str.strip, pos.split(","))
+        if(xcp.find("%")>-1):
+            xcenter = eval(xcp.replace("%","")) / 100.
+        else:
+            xcenter = eval(xcp) / float(src_width)
+
+        if(ycp.find("%")>-1):
+            ycenter = eval(ycp.replace("%","")) / 100.
+        else:
+            ycenter = eval(ycp) / float(src_height)
+
+    return (z, (xcenter-0.5)*2, (ycenter-0.5)*2)
+
+
 def accelerate(frame, frames, accel):
     return frame
 #        x = 2.0*frame/(frames-1) - 1 # normalize between -1 and 1
