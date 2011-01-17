@@ -1,4 +1,4 @@
-import gst
+import gst, random
 
 def get_alpha_transition(config, element="alpha"):
     """Returns a bin that performs a transition between two input pads
@@ -132,7 +132,7 @@ smptes = [
     ]
 
 kenburns = [
-    "swap-lr",
+    "swap-lr", "travel-lr", "travel-rl", "travel-tb", "travel-bt", "travel-random",
 ]
 def get_kenburns_bin(name, config, duration):
     bin = gst.Bin()
@@ -152,25 +152,75 @@ def get_kenburns_bin(name, config, duration):
     bin.add_pad(gst.GhostPad("sink2", kb2.get_pad("sink")))
     bin.add_pad(gst.GhostPad("src",   caps.get_pad("src")))
 
-    kb1.props.pan_method = "external"
-    kb2.props.pan_method = "external"
+    if name == "swap-lr":
+        c1 = gst.Controller(kb1, "zpos", "xpos", "ypos")
+        c1.set_interpolation_mode("zpos", gst.INTERPOLATE_LINEAR)
+        c1.set_interpolation_mode("xpos", gst.INTERPOLATE_LINEAR)
+        c1.set_interpolation_mode("ypos", gst.INTERPOLATE_LINEAR)
+        c1.set("zpos", 0,        1.0)
+        c1.set("xpos", 0,        0.0)
+        c1.set("zpos", duration, 3.0)
+        c1.set("xpos", duration, -1.0)
+    
+        c2 = gst.Controller(kb2, "zpos", "xpos", "ypos")
+        c2.set_interpolation_mode("zpos",    gst.INTERPOLATE_LINEAR)
+        c2.set_interpolation_mode("xpos", gst.INTERPOLATE_LINEAR)
+        c2.set_interpolation_mode("ypos", gst.INTERPOLATE_LINEAR)
+        c2.set("zpos", 0,        3.0)
+        c2.set("xpos", 0,        1.2)
+        c2.set("zpos", duration, 1.0)
+        c2.set("xpos", duration, 0.0)
+        ctrls = [c1, c2]
 
-    c1 = gst.Controller(kb1, "zoom1", "xcenter1", "ycenter1")
-    c1.set_interpolation_mode("zoom1", gst.INTERPOLATE_LINEAR)
-    c1.set_interpolation_mode("xcenter1", gst.INTERPOLATE_LINEAR)
-    c1.set_interpolation_mode("ycenter1", gst.INTERPOLATE_LINEAR)
-    c1.set("zoom1",    0,        1.0)
-    c1.set("xcenter1", 0,        0.5)
-    c1.set("zoom1",    duration, 4.0)
-    c1.set("xcenter1", duration, -2.0)
+    elif name.startswith("travel"):
+        c1 = gst.Controller(kb1, "zpos", "xpos", "ypos")
+        c1.set_interpolation_mode("zpos", gst.INTERPOLATE_LINEAR)
+        c1.set_interpolation_mode("xpos", gst.INTERPOLATE_LINEAR)
+        c1.set_interpolation_mode("ypos", gst.INTERPOLATE_LINEAR)
+        c2 = gst.Controller(kb2, "zpos", "xpos", "ypos")
+        c2.set_interpolation_mode("zpos",    gst.INTERPOLATE_LINEAR)
+        c2.set_interpolation_mode("xpos", gst.INTERPOLATE_LINEAR)
+        c2.set_interpolation_mode("ypos", gst.INTERPOLATE_LINEAR)
 
-    c2 = gst.Controller(kb2, "zoom1", "xcenter1", "ycenter1")
-    c2.set_interpolation_mode("zoom1",    gst.INTERPOLATE_LINEAR)
-    c2.set_interpolation_mode("xcenter1", gst.INTERPOLATE_LINEAR)
-    c2.set_interpolation_mode("ycenter1", gst.INTERPOLATE_LINEAR)
-    c2.set("zoom1",    0,        4.0)
-    c2.set("xcenter1", 0,        3.0)
-    c2.set("zoom1",    duration, 1.0)
-    c2.set("xcenter1", duration, 0.5)
+        c1.set("zpos", 0,            1.0)
+        c1.set("zpos", duration/4,   1.3)
+        c1.set("xpos", 0,            0.0)
+        c1.set("xpos", duration/4,   0.0)
+        c1.set("ypos", 0,            0.0)
+        c1.set("ypos", duration/4,   0.0)
 
-    return bin, (c1, c2)
+        c2.set("zpos", 0,            1.3)
+        c2.set("zpos", duration/4,   1.3)
+        c2.set("zpos", duration*3/4, 1.3)
+        c2.set("zpos", duration,     1.0)
+        c2.set("xpos", duration*3/4, 0.0)
+        c2.set("xpos", duration,     0.0)
+        c2.set("ypos", duration*3/4, 0.0)
+        c2.set("ypos", duration,     0.0)
+
+        if name.endswith("random"):
+            name = random.sample(["lr","rl","tb","bt"],1)[0]
+        if name.endswith("lr"):
+            c1.set("xpos", duration*3/4, 2.0)
+            c2.set("xpos", 0,           -2.0)
+            c2.set("xpos", duration/4,  -2.0)
+        elif name.endswith("rl"):
+            c1.set("xpos", duration*3/4, -2.0)
+            c2.set("xpos", 0,             2.0)
+            c2.set("xpos", duration/4,    2.0)
+        elif name.endswith("tb"):
+            c1.set("ypos", duration*3/4, -2.0)
+            c2.set("ypos", 0,             2.0)
+            c2.set("ypos", duration/4,    2.0)
+        elif name.endswith("bt"):
+            c1.set("ypos", duration*3/4, 2.0)
+            c2.set("ypos", 0,           -2.0)
+            c2.set("ypos", duration/4,  -2.0)
+            
+
+
+
+        ctrls = [c1, c2]
+
+
+    return bin, ctrls

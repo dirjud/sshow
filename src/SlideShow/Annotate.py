@@ -134,6 +134,4 @@ def parse_annotate_params(self, element, params, duration=0):
 
     # save off a reference to the controller so that it does not pop
     # off the the stack and dissapear.
-    if not(hasattr(self, "annotation_controllers")):
-        self.annotation_controllers = []
-    self.annotation_controllers.append(ctlr)
+    self.controllers.append(ctlr)

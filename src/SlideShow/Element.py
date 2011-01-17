@@ -59,6 +59,7 @@ class Effect():
 class Element():
     def __init__(self, location):
         self.location = location
+        self.controllers = []
 
     def initialize(self):
         pass
@@ -153,7 +154,6 @@ class Image(Element):
         elements.append(caps)
 
         filesrc.set_property("location",  self.filename)
-        kenburns.set_property("duration", duration)
         capsfilter.set_property("caps", gst.Caps("video/x-raw-yuv,format=(fourcc)AYUV"))
         caps.set_property("caps", self.config.get_video_caps("AYUV"))
 
@@ -173,21 +173,20 @@ class Image(Element):
             i = fx_names.index("kenburns")
             param = self.effects[i].param
             zstart, pstart, zend, pend = map(str.strip, param.split(";"))
-            zoom1, xcenter1, ycenter1 = self.parse_kb_params(zstart, pstart)
-            zoom2, xcenter2, ycenter2 = self.parse_kb_params(zend,   pend)
-            kenburns.props.zoom1    = zoom1
-            kenburns.props.zoom2    = zoom2 
-            kenburns.props.xcenter1 = xcenter1
-            kenburns.props.ycenter1 = ycenter1
-            kenburns.props.xcenter2 = xcenter2
-            kenburns.props.ycenter2 = ycenter2
-        else:
-            kenburns.props.zoom1    = 1.0
-            kenburns.props.xcenter1 = 0.5
-            kenburns.props.ycenter1 = 0.5
-            kenburns.props.zoom2    = 1.0
-            kenburns.props.xcenter2 = 0.5
-            kenburns.props.ycenter2 = 0.5
+            zpos1, xpos1, ypos1 = self.parse_kb_params(zstart, pstart)
+            zpos2, xpos2, ypos2 = self.parse_kb_params(zend,   pend)
+            c = gst.Controller(kenburns, "zpos", "ypos", "xpos")
+            c.set_interpolation_mode("xpos", gst.INTERPOLATE_LINEAR)
+            c.set_interpolation_mode("ypos", gst.INTERPOLATE_LINEAR)
+            c.set_interpolation_mode("zpos", gst.INTERPOLATE_LINEAR)
+            c.set("zpos", 0,        zpos1)
+            c.set("zpos", duration, zpos2)
+            c.set("xpos", 0,        xpos1)
+            c.set("xpos", duration, xpos2)
+            c.set("ypos", 0,        ypos1)
+            c.set("ypos", duration, ypos2)
+            print zpos1, zpos2, xpos1, xpos2, ypos1, ypos2
+            self.controllers.append(c)
 
         def on_pad(src_element, pad, data, sink_element):
             sinkpad = sink_element.get_compatible_pad(pad, pad.get_caps())
@@ -247,7 +246,7 @@ class Image(Element):
             else:
                 ycenter = eval(ycp) / float(src_height)
     
-        return (z, xcenter, ycenter)
+        return (z, (xcenter-0.5)*2, (ycenter-0.5)*2)
 
 ################################################################################
 class Background(Element):
@@ -380,7 +379,8 @@ class Transition(Element):
         return "%s:%g" % (self.name, dur2flt(self.duration))
 
     def get_bin(self):
-        bin, self.controller = self.get_transition_bin(self.name, self.config, self.duration)
+        bin, ctrl = self.get_transition_bin(self.name, self.config, self.duration)
+        self.controllers.append(ctrl)
         return bin
 
 
@@ -438,20 +438,21 @@ class Audio(Element):
         audioconvert.link(volume)
         volume.link(capsfilter)
         
-        self.volume_controller = gst.Controller(volume, "volume")
-        self.volume_controller.set_interpolation_mode("volume", gst.INTERPOLATE_LINEAR)
+        c = gst.Controller(volume, "volume")
+        c.set_interpolation_mode("volume", gst.INTERPOLATE_LINEAR)
         if self.fadein:
-            self.volume_controller.set("volume", 0,    0.0)
-            self.volume_controller.set("volume", self.fadein, 1.0)
+            c.set("volume", 0,    0.0)
+            c.set("volume", self.fadein, 1.0)
         else:
-            self.volume_controller.set("volume", 0, 1.0)
+            c.set("volume", 0, 1.0)
             
         if self.fadeout:
-            self.volume_controller.set("volume", duration-self.fadeout, 1.0)
-            self.volume_controller.set("volume", duration,      0.0)
+            c.set("volume", duration-self.fadeout, 1.0)
+            c.set("volume", duration,      0.0)
         else:
-            self.volume_controller.set("volume", duration, 1.0)
-
+            c.set("volume", duration, 1.0)
+        self.controllers.append(c)
+        
         def on_pad(src_element, pad, data, sink_element):
             sinkpad = sink_element.get_compatible_pad(pad, pad.get_caps())
             pad.link(sinkpad)
