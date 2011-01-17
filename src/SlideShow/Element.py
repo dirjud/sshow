@@ -161,7 +161,7 @@ class Image(Element):
         filesrc.link(decodebin2)
         gst.element_link_many(*elements[2:])
 
-        if 1:
+        if 0:
             mixer  = gst.element_factory_make(self.config["videomixer"])
             bg_bin = background.get_bin()
             bin.add(mixer, bg_bin)
@@ -345,9 +345,9 @@ class Title(Element):
             Annotate.add_title(self, textoverlay, self.title1, "title", self.config)
             elements.append(textoverlay)
 
-        caps        = gst.element_factory_make("capsfilter")
-        caps.set_property("caps", self.config.get_video_caps("AYUV"))
-        elements.append(caps)
+        #caps        = gst.element_factory_make("capsfilter")
+        #caps.set_property("caps", self.config.get_video_caps("AYUV"))
+        #elements.append(caps)
         bin = gst.Bin()
         bin.add(*elements)
         gst.element_link_many(*elements)

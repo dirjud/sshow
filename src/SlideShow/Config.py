@@ -11,6 +11,7 @@ class Config(dict):
             audiosmp     = 1,  # default to do audio in background...
             bgfile       = "black",
 
+            transition   = None,
             debug        = 0, # 0-2
             pal          = 0,  
             copy         = 0,
@@ -106,6 +107,7 @@ class Config(dict):
 
 
     vars = [
+        "transition",
         "debug"             ,
         "pal"               ,
         "ac3"               ,

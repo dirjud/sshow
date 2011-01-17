@@ -126,6 +126,8 @@ class DVDSlideshow():
             if(line.startswith(var)):
                 key,val = DVDSlideshow.parse_key_value(line)
                 config.set_var(key, val)
+                if(key == "transition"):
+                    config.set_var(key, DVDSlideshow.get_element(val, location))
                 return Element.Config(location,key, val)
 
     @staticmethod

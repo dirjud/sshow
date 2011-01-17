@@ -112,6 +112,21 @@ def find_next_transition(pos, elements):
     else:
         return None
 
+def find_next_slide(pos, elements):
+    """Walks the elements forward starting with element until it finds
+    the next slide. If it finds a slide, it returns it. If it reaches
+    the end or a transition, it returns None."""
+    if pos+1 < len(elements):
+        next = elements[pos+1]
+        if isSlide(next):
+            return next
+        elif next.isa("Transition"):
+            return None
+        else:
+            return find_next_slide(pos+1, elements)
+    else:
+        return None
+
 def find_prev_transition(pos, elements):
     """Walks elements backward starting with pos until it
     finds a transition or another slide. If it finds a transition, it
@@ -126,22 +141,6 @@ def find_prev_transition(pos, elements):
             return None
         else:
             return find_prev_transition(pos-1, elements)
-    else:
-        return None
-
-def find_next_audio_element(pos, elements):
-    """Walks the elements forward starting with element until it finds
-    an audio element or another slide. If it finds an audio element,
-    it return the audio element. If it reaches the end or a slide, it
-    returns None."""
-    if pos+1 < len(elements):
-        next = elements[pos+1]
-        if next.isa("Audio"):
-            return next
-        elif isSlide(next):
-            return None
-        else:
-            return find_next_transition(pos+1, elements)
     else:
         return None
 
@@ -404,6 +403,19 @@ def print_gnlcomp(comp):
     for element in comp.elements():
         print " start=%3.3g dur=%3.3g %s" % (Element.dur2flt(element.props.start), Element.dur2flt(element.props.duration), element.get_name())
 
+def add_transition(element, comp, start_time, config):
+    dur = element.duration
+    
+    op = gst.element_factory_make("gnloperation", config.get_unique(element.name))
+    op.add(element.get_bin())
+    op.props.start          = start_time - dur/2
+    op.props.duration       = dur
+    op.props.media_start    = 0
+    op.props.media_duration = dur
+    op.props.priority       = 0
+    comp.add(op)
+
+
 def get_video_bin(elements, config):
     comp = gst.element_factory_make("gnlcomposition", "composition")
     
@@ -420,6 +432,8 @@ def get_video_bin(elements, config):
     priority   = 1
     slide_times = []
     chapter_times = []
+    prev_transition = None
+
     for pos, element in enumerate(elements):
         try:
             if element.__class__ == Element.Background:
@@ -430,7 +444,6 @@ def get_video_bin(elements, config):
                 slide_times.append(start_time)
                 dur = element.duration
     
-                prev_transition = find_prev_transition(pos, elements)
                 if(prev_transition):
                     dur += prev_transition.duration/2
                     prev_dur = prev_transition.duration/2
@@ -438,8 +451,18 @@ def get_video_bin(elements, config):
                     prev_dur = 0
     
                 next_transition = find_next_transition(pos, elements)
+
+                # if no next transition but a default transition is provided
+                # and there is another slide to transition to, then insert
+                # the default.
+                if not(next_transition) and config["transition"] and find_next_slide(pos, elements):
+                    next_transition = config["transition"]
+                    next_transition.set_config(config)
+                    add_transition(next_transition, comp, start_time+element.duration, config)
+                    
                 if(next_transition):
                     dur += next_transition.duration/2
+                prev_transition = next_transition
     
                 src = gst.element_factory_make("gnlsource", config.get_unique(element.name))
                 src.add(element.get_bin(background, dur))
@@ -454,16 +477,7 @@ def get_video_bin(elements, config):
                 start_time += element.duration
     
             elif element.isa("Transition"):
-                dur = element.duration
-            
-                op = gst.element_factory_make("gnloperation", config.get_unique(element.name))
-                op.add(element.get_bin())
-                op.props.start          = start_time - dur/2
-                op.props.duration       = dur
-                op.props.media_start    = 0
-                op.props.media_duration = dur
-                op.props.priority       = 0
-                comp.add(op)
+                add_transition(element, comp, start_time, config)
     
             elif element.isa("Audio"):
                 dur   = element.duration
@@ -677,10 +691,37 @@ def get_audio_bin(elements, config, info):
 
     return audio
 
+#    mixer = gst.element_factory_make(config["videomixer"])
+#    bg = gst.element_factory_make("videotestsrc")
+#    cap1= gst.element_factory_make("capsfilter")
+#    cap1.props.caps = config.get_video_caps("AYUV")
+#    bgbin = gst.Bin()
+#    bgbin.add(bg, cap1)
+#    bg.link(cap1)
+#    bgbin.add_pad(gst.GhostPad("src", cap1.get_pad("src")))
+#    gsrc = gst.element_factory_make("gnlsource")
+#    gsrc.add(bgbin)
+#    gsrc.props.start=0
+#    gsrc.props.duration=info["duration"]
+#    gsrc.props.media_start=0
+#    gsrc.props.media_duration=info["duration"]
+#    bgcomp= gst.element_factory_make("gnlcomposition")
+#    bgcomp.add(gsrc)
+#    cap3= gst.element_factory_make("capsfilter")
+#    cap3.props.caps = config.get_video_caps("AYUV")
+#
+#    color = gst.element_factory_make("ffmpegcolorspace")
+#    cap2= gst.element_factory_make("capsfilter")
+#    cap2.props.caps = config.get_video_caps("I420")
+#    def on_pad(comp, pad, element):
+#        capspad = element.get_compatible_pad(pad, pad.get_caps())
+#        pad.link(capspad)
+#    bgcomp.connect("pad-added", on_pad, cap3)
+
 def get_frontend(elements, config):
     video_bin, info = get_video_bin(elements, config)
     audio_bin = get_audio_bin(elements, config, info)
-
+    
     frontend = gst.Bin("frontend")
     frontend.add(video_bin, audio_bin)
 
