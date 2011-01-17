@@ -132,7 +132,7 @@ smptes = [
     ]
 
 kenburns = [
-    "swap-lr", "swap-rl", "swap-tb", "swap-bt", "swap-random", "border-train-lr", "border-train-rl", "border-train-tb", "border-train-bt", "border-train-random", "train-lr", "train-rl", "train-tb", "train-bt", "train-random", 
+    "swap-lr", "swap-rl", "swap-tb", "swap-bt", "swap-random", "border-train-lr", "border-train-rl", "border-train-tb", "border-train-bt", "border-train-random", "train-lr", "train-rl", "train-tb", "train-bt", "train-random", "reel-lr", "reel-rl", "reel-tb", "reel-bt", "reel-random", 
 ]
 def get_kenburns_bin(name, config, duration, start1):
     bin = gst.Bin()
@@ -265,5 +265,91 @@ def get_kenburns_bin(name, config, duration, start1):
             c1.set("ypos", start1+duration, 2.0)
             c2.set("ypos", 0,  -2.0)
 
+
+    elif name.startswith("reel"):
+        c1 = gst.Controller(kb1, "zpos", "xpos", "ypos", "yrot", "xrot")
+        c1.set_interpolation_mode("zpos", gst.INTERPOLATE_LINEAR)
+        c1.set_interpolation_mode("xpos", gst.INTERPOLATE_LINEAR)
+        c1.set_interpolation_mode("ypos", gst.INTERPOLATE_LINEAR)
+        c1.set_interpolation_mode("xrot", gst.INTERPOLATE_LINEAR)
+        c1.set_interpolation_mode("yrot", gst.INTERPOLATE_LINEAR)
+        c2 = gst.Controller(kb2, "zpos", "xpos", "ypos", "yrot", "xrot")
+        c2.set_interpolation_mode("zpos",    gst.INTERPOLATE_LINEAR)
+        c2.set_interpolation_mode("xpos", gst.INTERPOLATE_LINEAR)
+        c2.set_interpolation_mode("ypos", gst.INTERPOLATE_LINEAR)
+        c2.set_interpolation_mode("xrot", gst.INTERPOLATE_LINEAR)
+        c2.set_interpolation_mode("yrot", gst.INTERPOLATE_LINEAR)
+        ctrls = [c1, c2]
+
+        c1.set("zpos", start1+0,            1.0)
+        c1.set("zpos", start1+duration/4,   1.3)
+        c1.set("xpos", start1+0,            0.0)
+        c1.set("xpos", start1+duration/4,   0.0)
+        c1.set("xrot", start1+0,            0.0)
+        c1.set("xrot", start1+duration/4,   0.0)
+        c1.set("ypos", start1+0,            0.0)
+        c1.set("ypos", start1+duration/4,   0.0)
+        c1.set("yrot", start1+0,            0.0)
+        c1.set("yrot", start1+duration/4,   0.0)
+
+        c2.set("zpos", 0,            1.3)
+        c2.set("zpos", duration/4,   1.3)
+        c2.set("zpos", duration*3/4, 1.3)
+        c2.set("zpos", duration,     1.0)
+        c2.set("xpos", duration*3/4, 0.0)
+        c2.set("xpos", duration,     0.0)
+        c2.set("ypos", duration*3/4, 0.0)
+        c2.set("ypos", duration,     0.0)
+        c2.set("xrot", duration*3/4, 0.0)
+        c2.set("xrot", duration,     0.0)
+        c2.set("yrot", duration*3/4, 0.0)
+        c2.set("yrot", duration,     0.0)
+
+        if name.endswith("random"):
+            name = random.sample(["lr","rl","tb","bt"],1)[0]
+        if name.endswith("lr"):
+            c1.set("xpos", start1+duration*3/4, 2.5)
+            c1.set("xrot", start1+duration*3/4, -85)
+            c1.set("zpos", start1+duration*3/4, 1.3)
+            c1.set("zpos", start1+duration*3/4, 2.5)
+            c2.set("xpos", 0,           -2.5)
+            c2.set("xpos", duration/4,  -2.5)
+            c2.set("xrot", duration/4,  90)
+            c2.set("xrot", 0,           90)
+            c2.set("zpos", 0,           2.5)
+            c2.set("zpos", duration/4,  2.5)
+        elif name.endswith("rl"):
+            c1.set("xpos", start1+duration*3/4, -2.5)
+            c1.set("xrot", start1+duration*3/4, 85)
+            c1.set("zpos", start1+duration*3/4, 1.3)
+            c1.set("zpos", start1+duration*3/4, 2.5)
+            c2.set("xpos", 0,           2.5)
+            c2.set("xpos", duration/4,  2.5)
+            c2.set("xrot", duration/4,  -90)
+            c2.set("xrot", 0,           -90)
+            c2.set("zpos", 0,           2.5)
+            c2.set("zpos", duration/4,  2.5)
+        elif name.endswith("tb"):
+            c1.set("ypos", start1+duration*3/4, -2.5)
+            c1.set("yrot", start1+duration*3/4, -85)
+            c1.set("zpos", start1+duration*3/4, 1.3)
+            c1.set("zpos", start1+duration*3/4, 2.5)
+            c2.set("ypos", 0,           2.5)
+            c2.set("ypos", duration/4,  2.5)
+            c2.set("yrot", duration/4,  90)
+            c2.set("yrot", 0,           90)
+            c2.set("zpos", 0,           2.5)
+            c2.set("zpos", duration/4,  2.5)
+        elif name.endswith("bt"):
+            c1.set("ypos", start1+duration*3/4, 2.5)
+            c1.set("yrot", start1+duration*3/4, 85)
+            c1.set("zpos", start1+duration*3/4, 1.3)
+            c1.set("zpos", start1+duration*3/4, 2.5)
+            c2.set("ypos", 0,           -2.5)
+            c2.set("ypos", duration/4,  -2.5)
+            c2.set("yrot", duration/4,  -90)
+            c2.set("yrot", 0,           -90)
+            c2.set("zpos", 0,           2.5)
+            c2.set("zpos", duration/4,  2.5)
 
     return bin, ctrls
