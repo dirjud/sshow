@@ -123,7 +123,7 @@ class DVDSlideshow():
     @staticmethod
     def check_var(line, config, location):
         for var in config.vars:
-            if(line.startswith(var)):
+            if(line.replace(" ","").startswith(var+"=")):
                 key,val = DVDSlideshow.parse_key_value(line)
                 config.set_var(key, val)
                 if(key == "transition"):
