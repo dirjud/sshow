@@ -495,7 +495,8 @@ class Video(Element):
         self.effects  = effects
         
     def initialize(self):
-        self.duration = get_duration(self.filename)
+        if not(self.duration):
+            self.duration = get_duration(self.filename)
 
     def get_bin(self, background=None, duration=None):
         if duration is None:
@@ -515,7 +516,6 @@ class Video(Element):
         cap1.props.caps = gst.Caps("video/x-raw-yuv,framerate=(fraction)%d/%d" % (self.config["framerate_numer"], self.config["framerate_denom"]))
         cap2.props.caps = gst.Caps("video/x-raw-yuv,format=(fourcc)AYUV")
         cap3.props.caps = self.config.get_video_caps("AYUV")
-        videoscale.props.add_borders = True
         filesrc.props.location = self.filename
         Annotate.add_annotations(self, duration, elements)
 
