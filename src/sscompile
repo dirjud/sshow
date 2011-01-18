@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 import SlideShow
-import gobject, logging, time, threading, gst, sys
+import gobject, logging, time, threading, gst, sys, signal
 
 logging.basicConfig(level=logging.WARN)
 log = logging.getLogger("sscompile")
@@ -50,12 +50,14 @@ class Progress(threading.Thread):
 loop = gobject.MainLoop(is_running=True)
 gobject.threads_init()
 
+def ctrl_c(signal, frame):
+    loop.quit()
 def eos_cb():
     loop.quit()
 def err_cb(err, debug):
     log.error(str(err) + str(debug))
     loop.quit()
-
+signal.signal(signal.SIGINT, ctrl_c)
 SlideShow.start(pipeline, eos_cb, err_cb)
 progress = Progress(pipeline, loop, time0)
 progress.start()
