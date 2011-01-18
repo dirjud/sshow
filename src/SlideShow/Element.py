@@ -126,7 +126,7 @@ class Image(Element):
             x += ":" + fx
         return x
 
-    def get_bin(self, background, duration=None):
+    def get_bin(self, duration=None):
         if duration is None:
             duration = self.duration
         self.width, self.height = get_dims(self.filename)
@@ -156,14 +156,6 @@ class Image(Element):
         bin.add(*elements)
         filesrc.link(decodebin2)
         gst.element_link_many(*elements[2:])
-
-        if 0:
-            mixer  = gst.element_factory_make(self.config["videomixer"])
-            bg_bin = background.get_bin()
-            bin.add(mixer, bg_bin)
-            bg_bin.link(mixer)
-            elements[-1].link(mixer)
-            elements.append(mixer)
 
         KenBurns.configure_kenburns(self, kenburns, duration)
 
@@ -257,11 +249,18 @@ class Title(Element):
     def __str__(self):
         return "%s:%g:%s:%s" % (self.name, dur2flt(self.duration), self.title1, self.title2)
 
-    def get_bin(self, background, duration=None):
+    def get_bin(self, duration=None):
         if duration is None:
             duration = self.duration
 
-        elements = [ background.get_bin() ]
+        # generate the default background in the event one is not supplied
+        background = Background("gen", "background", 0, "", "black")
+        background.set_config(self.config)
+        background.initialize()
+        
+        alpha = gst.element_factory_make("alpha")
+        alpha.props.alpha = 0.0
+        elements = [ background.get_bin(), alpha ]
         if self.name == "titlebar":
             if self.title1:
                 textoverlay = gst.element_factory_make("textoverlay")

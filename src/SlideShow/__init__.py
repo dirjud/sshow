@@ -64,7 +64,7 @@ def set_font(config, name):
 
 ################################################################################
 def isSlide(element):
-    return element.isa("Image") or (element.isa("Background") and element.duration > 0) or element.isa("Title") or element.isa("TestVideo") or element.isa("Video")
+    return element.isa("Image") or element.isa("Title") or element.isa("TestVideo") or element.isa("Video")
 
 def nextSlide(pos, elements):
     for element in elements[pos+1:]:
@@ -306,7 +306,7 @@ def initialize_elements(elements, config):
 
     
     framerate_numer = 30000 #int(round(config["framerate"] * 100))
-    framerate_denom = 1000 # 1001
+    framerate_denom = 999 #1001 # 1001
     config["framerate"] = framerate_numer / float(framerate_denom)
     config["framerate_numer"] = framerate_numer
     config["framerate_denom"] = framerate_denom
@@ -417,13 +417,9 @@ def add_transition(element, comp, start_time, offset1, config):
 
 
 def get_video_bin(elements, config):
-    comp = gst.element_factory_make("gnlcomposition", "composition")
+    comp   = gst.element_factory_make("gnlcomposition", "composition")
+    bgcomp = gst.element_factory_make("gnlcomposition", "background")
     
-    # generate the default background in the event one is not supplied
-    background = Element.Background("generated", "background", 0, "", "black")
-    background.set_config(config)
-    background.initialize()
-
     # we will also create the syncronization information necessary to build
     # the audio tracks.
     audio_info = {} # each track will get its own list of audio elements
@@ -434,13 +430,46 @@ def get_video_bin(elements, config):
     chapter_times = []
     prev_transition = None
     slide_dur = 0
+    bgsrc = background = None
+
+    def add_bgsrc(bgsrc):
+        if bgsrc:
+            bg_priority = bgsrc.props.priority + 1
+        else:
+            bg_priority = 1
+        bgsrc = gst.element_factory_make("gnlsource", config.get_unique(background.bg))
+        bgsrc.add(background.get_bin())
+        bgsrc.props.start = start_time
+        bgsrc.props.media_start = 0
+        bgsrc.props.priority = bg_priority
+        bgcomp.add(bgsrc)
+        return bgsrc
+
+    def set_bgdur(bgsrc):
+        dur = start_time - bgsrc.props.start 
+        # if the background element has a duration, then loop it as
+        # necessary to fill in the time.
+        while background.duration and dur > background.duration:
+            bgsrc.props.duration       = background.duration
+            bgsrc.props.media_duration = background.duration
+            start = bgsrc.props.start
+            bgsrc = add_bgsrc(bgsrc)
+            bgsrc.props.start = start + background.duration 
+            dur = start_time - bgsrc.props.start
+        bgsrc.props.duration       = dur
+        bgsrc.props.media_duration = dur
+        return bgsrc
+
     for pos, element in enumerate(elements):
         try:
             if element.__class__ == Element.Background:
-                element.set_prev_background(background)
+                if bgsrc: # the duration on the last background
+                    bgsrc = set_bgdur(bgsrc)
                 background = element
-    
-            if isSlide(element):
+                element.set_prev_background(background)
+                bgsrc = add_bgsrc(bgsrc)
+
+            elif isSlide(element):
                 slide_times.append(start_time)
                 dur = element.duration
     
@@ -467,7 +496,7 @@ def get_video_bin(elements, config):
                 prev_transition = next_transition
     
                 src = gst.element_factory_make("gnlsource", config.get_unique(element.name))
-                src.add(element.get_bin(background, dur))
+                src.add(element.get_bin(dur))
                 src.props.start          = start_time - prev_dur
                 src.props.duration       = dur
                 src.props.media_start    = 0
@@ -501,22 +530,41 @@ def get_video_bin(elements, config):
             raise Exception("%s: %s" % (element.location, str(e)))
 
     video_dur = start_time
+
+    if bgsrc: # the duration on the last background
+        bgsrc = set_bgdur(bgsrc)
+    else:
+        raise Exception("FIX ME: no background specified")
         
     bin = gst.Bin()
+    cap1 = gst.element_factory_make("capsfilter")
+    cap2 = gst.element_factory_make("capsfilter")
+    ident1 = gst.element_factory_make("identity")
+    ident2 = gst.element_factory_make("identity")
+    ident1.props.single_segment = 1
+    ident2.props.single_segment = 1
+    mixer = gst.element_factory_make(config["videomixer"])
     color = gst.element_factory_make("ffmpegcolorspace")
     caps = gst.element_factory_make("capsfilter")
+    cap1.props.caps = config.get_video_caps("AYUV")
+    cap2.props.caps = config.get_video_caps("AYUV")
     caps.props.caps = config.get_video_caps("I420")
-    bin.add(comp, color, caps)
-    gst.element_link_many(color, caps)
+    bin.add(bgcomp, comp, ident1, ident2, cap1, cap2, mixer, color, caps)
+    gst.element_link_many(cap1, ident1, mixer, color, caps)
+    gst.element_link_many(cap2, ident2, mixer)
 
     bin.add_pad(gst.GhostPad("src", caps.get_pad("src")))
     def on_pad(comp, pad, element):
-        capspad = element.get_compatible_pad(pad, pad.get_caps())
+        capspad = element.get_pad("sink")
         pad.link(capspad)
-    comp.connect("pad-added", on_pad, color)
+    bgcomp.connect("pad-added", on_pad, cap1)
+    comp.connect("pad-added",   on_pad, cap2)
 
     print "Video Composition:"
     print_gnlcomp(comp)
+
+    print "Background Composition:"
+    print_gnlcomp(bgcomp)
 
     return bin, dict(duration=video_dur, composition=comp, bin=bin, audio_info=audio_info, slide_times=slide_times, chapter_times=chapter_times)
 
@@ -694,33 +742,6 @@ def get_audio_bin(elements, config, info):
 
     return audio
 
-#    mixer = gst.element_factory_make(config["videomixer"])
-#    bg = gst.element_factory_make("videotestsrc")
-#    cap1= gst.element_factory_make("capsfilter")
-#    cap1.props.caps = config.get_video_caps("AYUV")
-#    bgbin = gst.Bin()
-#    bgbin.add(bg, cap1)
-#    bg.link(cap1)
-#    bgbin.add_pad(gst.GhostPad("src", cap1.get_pad("src")))
-#    gsrc = gst.element_factory_make("gnlsource")
-#    gsrc.add(bgbin)
-#    gsrc.props.start=0
-#    gsrc.props.duration=info["duration"]
-#    gsrc.props.media_start=0
-#    gsrc.props.media_duration=info["duration"]
-#    bgcomp= gst.element_factory_make("gnlcomposition")
-#    bgcomp.add(gsrc)
-#    cap3= gst.element_factory_make("capsfilter")
-#    cap3.props.caps = config.get_video_caps("AYUV")
-#
-#    color = gst.element_factory_make("ffmpegcolorspace")
-#    cap2= gst.element_factory_make("capsfilter")
-#    cap2.props.caps = config.get_video_caps("I420")
-#    def on_pad(comp, pad, element):
-#        capspad = element.get_compatible_pad(pad, pad.get_caps())
-#        pad.link(capspad)
-#    bgcomp.connect("pad-added", on_pad, cap3)
-
 def get_frontend(elements, config):
     video_bin, info = get_video_bin(elements, config)
     audio_bin = get_audio_bin(elements, config, info)
@@ -873,6 +894,7 @@ def start(pipeline, eos_cb, err_cb):
     def on_message(bus, message, eos_cb, err_cb):
         t = message.type
 	if t == gst.MESSAGE_EOS:
+            print "EOS"
             eos_cb()
 	elif t == gst.MESSAGE_ERROR:
             err, debug = message.parse_error()
