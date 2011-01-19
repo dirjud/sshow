@@ -845,6 +845,9 @@ def get_preview_backend(config, num_audio_tracks):
     video_caps = gst.element_factory_make("capsfilter")
     video_caps.props.caps = config.get_video_caps("I420")
     mqueue = gst.element_factory_make("multiqueue")
+    mqueue.props.max_size_time = 10 * gst.SECOND
+    mqueue.props.max_size_bytes   = 0
+    mqueue.props.max_size_buffers = 0
     video_sink  = gst.element_factory_make("autovideosink")
     audio_sel = gst.element_factory_make("input-selector")
     audio_sink  = gst.element_factory_make("autoaudiosink")
