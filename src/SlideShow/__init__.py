@@ -306,7 +306,7 @@ def initialize_elements(elements, config):
 
     
     framerate_numer = 30000 #int(round(config["framerate"] * 100))
-    framerate_denom = 999 #1001 # 1001
+    framerate_denom = 1001 # 1001
     config["framerate"] = framerate_numer / float(framerate_denom)
     config["framerate_numer"] = framerate_numer
     config["framerate_denom"] = framerate_denom
@@ -543,15 +543,16 @@ def get_video_bin(elements, config):
     ident2 = gst.element_factory_make("identity")
     ident1.props.single_segment = 1
     ident2.props.single_segment = 1
+    mqueue= gst.element_factory_make("multiqueue")
     mixer = gst.element_factory_make(config["videomixer"])
     color = gst.element_factory_make("ffmpegcolorspace")
     caps = gst.element_factory_make("capsfilter")
     cap1.props.caps = config.get_video_caps("AYUV")
     cap2.props.caps = config.get_video_caps("AYUV")
     caps.props.caps = config.get_video_caps("I420")
-    bin.add(bgcomp, comp, ident1, ident2, cap1, cap2, mixer, color, caps)
-    gst.element_link_many(cap1, ident1, mixer, color, caps)
-    gst.element_link_many(cap2, ident2, mixer)
+    bin.add(bgcomp, comp, ident1, ident2, cap1, cap2, mqueue, mixer, color, caps)
+    gst.element_link_many(cap1, ident1, mqueue, mixer, color, caps)
+    gst.element_link_many(cap2, ident2, mqueue, mixer)
 
     bin.add_pad(gst.GhostPad("src", caps.get_pad("src")))
     def on_pad(comp, pad, element):
@@ -780,10 +781,6 @@ def get_encoder_backend(config, num_audio_tracks):
     video_caps.props.caps = config.get_video_caps("I420")
     video_scale = gst.element_factory_make("videoscale")
     video_caps2 = gst.element_factory_make("capsfilter")
-    #video_queue = gst.element_factory_make("queue")
-    #video_queue.props.max_size_time = 10 * gst.SECOND
-    #video_queue.props.max_size_bytes   = 0
-    #video_queue.props.max_size_buffers = 0
 
     if 1:
         video_caps2.props.caps = config.get_video_caps("I420")
@@ -802,7 +799,6 @@ def get_encoder_backend(config, num_audio_tracks):
         video_caps2.props.caps = config.get_video_caps("I420", width=720, height=480)
         video_enc = gst.element_factory_make("ffenc_mpeg2video", "video_enc")
         video_enc.props.bitrate = config["video_bitrate"] * 1000
-        print config["video_bitrate"]
         mux = gst.element_factory_make("mplex", "mux")
         mux.props.format = 8
         mux.props.mux_bitrate = 9500
@@ -819,18 +815,15 @@ def get_encoder_backend(config, num_audio_tracks):
 
     config["outfile"] = config["outdir"]+"/"+config["slideshow_name"]+"."+extension
 
-    sink      = gst.element_factory_make("filesink", "sink")
+    mqueue = gst.element_factory_make("multiqueue")
+    sink   = gst.element_factory_make("filesink", "sink")
     sink.set_property("location", config["outfile"])
 
-    backend.add(video_ident, video_caps, video_scale, video_caps2, video_enc, mux, sink)
-    gst.element_link_many(video_ident, video_caps, video_scale, video_caps2, video_enc, mux, sink)
+    backend.add(video_ident, video_caps, video_scale, video_caps2, video_enc, mqueue, mux, sink)
+    gst.element_link_many(video_ident, video_caps, video_scale, video_caps2, video_enc, mqueue, mux, sink)
     backend.add_pad(gst.GhostPad("video_sink", video_ident.get_pad("sink")))
 
     for i in range(num_audio_tracks):
-        #audio_queue = gst.element_factory_make("queue")
-        #audio_queue.props.max_size_time = 10 * gst.SECOND
-        #audio_queue.props.max_size_bytes   = 0
-        #audio_queue.props.max_size_buffers = 0
         audio_ident = gst.element_factory_make("identity")
         audio_ident.props.single_segment = 1
         if config["ac3"]:
@@ -840,38 +833,36 @@ def get_encoder_backend(config, num_audio_tracks):
         elements = [ audio_ident, audio_enc,  ]
         backend.add(*elements)
         gst.element_link_many(*elements)
-        elements[-1].link(mux)
+        elements[-1].link(mqueue)
+        mqueue.link(mux)
         backend.add_pad(gst.GhostPad("audio_sink%d"%i, audio_ident.get_pad("sink")))
     return backend
 
 def get_preview_backend(config, num_audio_tracks):
     backend = gst.Bin("backend")
-    video_queue = gst.element_factory_make("queue")
-    video_queue.props.max_size_time = 10 * gst.SECOND
-    video_queue.props.max_size_bytes   = 0
-    video_queue.props.max_size_buffers = 0
     #audio_volume = gst.element_factory_make("volume","volume")
 
-    sinks = []
-    for i in range(num_audio_tracks):
-        if i == 0:
-            audio_queue = gst.element_factory_make("queue")
-            audio_queue.props.max_size_time = 10 * gst.SECOND
-            audio_queue.props.max_size_bytes   = 0
-            audio_queue.props.max_size_buffers = 0
-            audio_sink  = gst.element_factory_make("autoaudiosink")
-        else:
-            sinks.append(gst.element_factory_make("fakesink"))
-
+    video_caps = gst.element_factory_make("capsfilter")
+    video_caps.props.caps = config.get_video_caps("I420")
+    mqueue = gst.element_factory_make("multiqueue")
     video_sink  = gst.element_factory_make("autovideosink")
+    audio_sel = gst.element_factory_make("input-selector")
+    audio_sink  = gst.element_factory_make("autoaudiosink")
+    backend.add(video_caps, mqueue, video_sink, audio_sel, audio_sink)
+    gst.element_link_many(video_caps, mqueue, video_sink)
+    gst.element_link_many(audio_sel, mqueue, audio_sink)
 
-    backend.add(video_queue, video_sink, audio_queue, audio_sink, *sinks)
-    video_queue.link(video_sink)
-    audio_queue.link(audio_sink)
-    backend.add_pad(gst.GhostPad("video_sink", video_queue.get_pad("sink")))
-    backend.add_pad(gst.GhostPad("audio_sink0", audio_queue.get_pad("sink")))
-    for i,sink in enumerate(sinks):
-        backend.add_pad(gst.GhostPad("audio_sink%d" % (i+1,), sink.get_pad("sink")))
+    audio_caps = []
+    for i in range(num_audio_tracks):
+        caps = gst.element_factory_make("capsfilter")
+        audio_caps.append(caps)
+        caps.props.caps = config.get_audio_caps()
+        backend.add(caps)
+        caps.link(audio_sel)
+
+    backend.add_pad(gst.GhostPad("video_sink", video_caps.get_pad("sink")))
+    for i,sink in enumerate(audio_caps):
+        backend.add_pad(gst.GhostPad("audio_sink%d" % (i,), sink.get_pad("sink")))
 
     return backend
 
@@ -894,7 +885,6 @@ def start(pipeline, eos_cb, err_cb):
     def on_message(bus, message, eos_cb, err_cb):
         t = message.type
 	if t == gst.MESSAGE_EOS:
-            print "EOS"
             eos_cb()
 	elif t == gst.MESSAGE_ERROR:
             err, debug = message.parse_error()

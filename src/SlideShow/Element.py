@@ -126,9 +126,12 @@ class Image(Element):
             x += ":" + fx
         return x
 
-    def get_bin(self, duration=None):
+    def get_bin(self, duration=None, border=None):
         if duration is None:
             duration = self.duration
+        if border is None:
+            border = self.config["border"]
+
         self.width, self.height = get_dims(self.filename)
 
         fx_names = [ x.name for x in self.effects ]
@@ -157,7 +160,7 @@ class Image(Element):
         filesrc.link(decodebin2)
         gst.element_link_many(*elements[2:])
 
-        KenBurns.configure_kenburns(self, kenburns, duration)
+        KenBurns.configure_kenburns(self, kenburns, duration, border=border)
 
         def on_pad(src_element, pad, data, sink_element):
             sinkpad = sink_element.get_compatible_pad(pad, pad.get_caps())
@@ -186,6 +189,16 @@ class Background(Element):
             raise Exception("Cannot specify a 0 duration and no background file or color")
         if(self.bg and self.bg[0] != "#" and not(self.bg in Background.colors) and not(os.path.exists(self.bg))):
              raise Exception("Unknown background specified. Must be a file or color")
+        self.image = None
+        if(os.path.exists(self.bg)):
+            self.image = Image(location, self.bg, duration, subtitle, effects)
+        elif(self.bg[0] == "#"):
+            if(len(self.bg) != 7):
+                raise Exception("Unknown color '%s'" % self.bg)
+        elif(self.bg in Background.colors):
+            pass
+        else:
+            raise Exception("Background color/image '%s' is unkonwn." % self.bg)
 
     def __str__(self):
         if self.bg.__class__ is Background:
@@ -205,8 +218,10 @@ class Background(Element):
 
         if self.bg.__class__ is Background:
             return self.bg.get_bin()
-        elif(os.path.exists(self.bg)):
-            return get_bg_image_bin(self)
+        elif(self.image):
+            self.image.set_config(self.config)
+            bin = self.image.get_bin(duration, border=0)
+            return bin
         elif(self.bg in Background.colors):
             return self.get_bg_color_bin(colorLU[self.bg])
         elif(self.bg[0] == "#"):

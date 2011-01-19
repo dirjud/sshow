@@ -3,7 +3,7 @@ import logging, math, os
 log = logging.getLogger(__name__)
 
 
-def configure_kenburns(self, kenburns, duration):
+def configure_kenburns(self, kenburns, duration, border=None):
     import gst
     for i, fx in enumerate(self.effects):
         if fx.name == "kenburns":
@@ -22,6 +22,10 @@ def configure_kenburns(self, kenburns, duration):
             c.set("ypos", duration, ypos2)
             self.controllers.append(c)
             #kenburns.props.verbose = 1
+    if border is None:
+        kenburns.props.border = self.config["border"]
+    else:
+        kenburns.props.border = border
 
 
 def parse_kb_params(zoom, pos, config, width, height):
