@@ -159,6 +159,8 @@ class DVDSlideshow():
             return DVDSlideshow.getVideo(location, element, fields)
         elif element in Element.Silence.names:
             return DVDSlideshow.getSilence(location, element, fields)
+        elif element in Element.Blank.names:
+            return DVDSlideshow.getBlank(location, element, fields)
         elif element in Element.Chapter.names:
             return DVDSlideshow.getChapter(location, element, fields)
         elif element in Element.TestVideo.names:
@@ -211,6 +213,12 @@ class DVDSlideshow():
         effects = DVDSlideshow.parse_effects(fields)
         return Element.Background(location, name, duration, subtitle, background, effects)
 
+    @staticmethod
+    def getBlank(location, name, fields):
+        duration = DVDSlideshow.parse_duration(DVDSlideshow.pop(fields), allow_zero=True)
+        subtitle = DVDSlideshow.pop(fields)
+        effects = DVDSlideshow.parse_effects(fields)
+        return Element.Blank(location, name, duration, subtitle, effects)
     
     @staticmethod
     def getImage(location, filename, fields):

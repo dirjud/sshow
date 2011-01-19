@@ -64,7 +64,7 @@ def set_font(config, name):
 
 ################################################################################
 def isSlide(element):
-    return element.isa("Image") or element.isa("Title") or element.isa("TestVideo") or element.isa("Video")
+    return element.isa("Image") or element.isa("Title") or element.isa("TestVideo") or element.isa("Video") or element.isa("Blank")
 
 def nextSlide(pos, elements):
     for element in elements[pos+1:]:

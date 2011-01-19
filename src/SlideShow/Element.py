@@ -49,6 +49,13 @@ def get_duration(filename):
 def dur2flt(dur):
     return dur / float(gst.SECOND)
 
+def render_subtitle(element, elements):
+    if hasattr(element, "subtitle") and element.config["subtitle_type"] == "render" and element.subtitle:
+        subtitle = gst.element_factory_make("textoverlay")
+        elements.append(subtitle)
+        Annotate.add_subtitle(element, subtitle, element.subtitle, element.config)
+
+
 ################################################################################
 class Effect():
     def __init__(self, name, param):
@@ -134,8 +141,6 @@ class Image(Element):
 
         self.width, self.height = get_dims(self.filename)
 
-        fx_names = [ x.name for x in self.effects ]
-
         bin = gst.Bin()
         elements = []
         for name in [ "filesrc", "decodebin2", "ffmpegcolorspace", "capsfilter", "imagefreeze", "kenburns", ]:
@@ -143,12 +148,7 @@ class Image(Element):
             exec("%s = elements[-1]" % name)
 
         Annotate.add_annotations(self, duration, elements)
-
-        if self.config["subtitle_type"] == "render" and self.subtitle:
-            subtitle = gst.element_factory_make("textoverlay")
-            elements.append(subtitle)
-            Annotate.add_subtitle(self, subtitle, self.subtitle, self.config)
-
+        render_subtitle(self, elements)
         caps = gst.element_factory_make("capsfilter")
         elements.append(caps)
 
@@ -167,6 +167,44 @@ class Image(Element):
             pad.link(sinkpad)
 
         decodebin2.connect("new-decoded-pad", on_pad, ffmpegcolorspace)
+        bin.add_pad(gst.GhostPad("src", elements[-1].get_pad("src")))
+        return bin
+
+################################################################################
+class Blank(Element):
+    names = [ "blank" ]
+    def __init__(self, location, name, duration, subtitle, effects):
+        Element.__init__(self, location)
+        self.name      = name
+        self.duration  = duration
+        self.subtitle  = subtitle
+        self.effects   = effects
+        if(self.duration <= 0):
+            self.duration = 5.0;
+
+    def __str__(self):
+        x = "%s:%g:%s" % (self.name, dur2flt(self.duration), encode(self.subtitle))
+        fx = ":".join([ "%s:%s" % (y.name,encode(y.param)) for y in self.effects ])
+        if(fx):
+            x += ":" + fx
+        return x
+
+    def get_bin(self, duration=None):
+        bin = gst.Bin()
+        elements = []
+        for name in [ "videotestsrc", "capsfilter", ]:
+            elements.append(gst.element_factory_make(name))
+            exec("%s = elements[-1]" % name)
+
+        videotestsrc.props.pattern = "black"
+        videotestsrc.props.foreground_color = 0
+        videotestsrc.props.background_color = 0
+        Annotate.add_annotations(self, duration, elements)
+        render_subtitle(self, elements)
+        capsfilter.set_property("caps", self.config.get_video_caps("AYUV"))
+
+        bin.add(*elements)
+        gst.element_link_many(*elements)
         bin.add_pad(gst.GhostPad("src", elements[-1].get_pad("src")))
         return bin
 
@@ -233,10 +271,7 @@ class Background(Element):
         src.props.pattern = "white"
         src.props.foreground_color = get_color(bgcolor)
         elements.append(src)
-        if self.config["subtitle_type"] == "render" and self.subtitle:
-            subtitle = gst.element_factory_make("textoverlay")
-            Annotate.add_subtitle(self, subtitle, self.subtitle, self.config)
-            elements.append(subtitle)
+        render_subtitle(self, elements)
         if(self.duration):
             Annotate.add_annotations(self, self.duration, elements)
         caps = gst.element_factory_make("capsfilter")
@@ -462,10 +497,7 @@ class TestVideo(Element):
             except:
                 raise Exception("Error setting specified test pattern.")
         elements.append(src)
-        if self.config["subtitle_type"] == "render" and self.subtitle:
-            subtitle = gst.element_factory_make("textoverlay")
-            elements.append(subtitle)
-            Annotate.add_subtitle(self, subtitle, self.subtitle, self.config)
+        render_subtitle(self, elements)
         Annotate.add_annotations(self, duration, elements)
         caps = gst.element_factory_make("capsfilter")
         caps.props.caps = self.config.get_video_caps("AYUV")
@@ -518,6 +550,7 @@ class Video(Element):
         cap3.props.caps = self.config.get_video_caps("AYUV")
         filesrc.props.location = self.filename
         Annotate.add_annotations(self, duration, elements)
+        render_subtitle(self, elements)
 
         bin.add(*elements)
         gst.element_link_many(*elements[2:])
