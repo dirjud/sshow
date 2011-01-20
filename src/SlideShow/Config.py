@@ -100,7 +100,7 @@ class Config(dict):
             )
         self.update(defaults)
         
-        if gst.element_factory_find("videomixer2"):
+        if gst.element_factory_find("videomixer2") and False:
             self["videomixer"] = "videomixer2"
         else:
             self["videomixer"] = "videomixer"

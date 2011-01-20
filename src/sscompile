@@ -51,6 +51,8 @@ loop = gobject.MainLoop(is_running=True)
 gobject.threads_init()
 
 def ctrl_c(signal, frame):
+    print "sent EOS"
+    pipeline.send_event(gst.event_new_eos());
     loop.quit()
 def eos_cb():
     loop.quit()

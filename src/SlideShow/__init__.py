@@ -306,7 +306,7 @@ def initialize_elements(elements, config):
 
     
     framerate_numer = 30000 #int(round(config["framerate"] * 100))
-    framerate_denom = 1001 # 1001
+    framerate_denom = 1000 # 1001
     config["framerate"] = framerate_numer / float(framerate_denom)
     config["framerate_numer"] = framerate_numer
     config["framerate_denom"] = framerate_denom
@@ -544,7 +544,11 @@ def get_video_bin(elements, config):
     ident1.props.single_segment = 1
     ident2.props.single_segment = 1
     mqueue= gst.element_factory_make("multiqueue")
+    mqueue.props.max_size_time = 1 * gst.SECOND
+    mqueue.props.max_size_bytes   = 0
+    mqueue.props.max_size_buffers = 0
     mixer = gst.element_factory_make(config["videomixer"])
+    mixer.props.background = "black"
     color = gst.element_factory_make("ffmpegcolorspace")
     caps = gst.element_factory_make("capsfilter")
     cap1.props.caps = config.get_video_caps("AYUV")
@@ -775,8 +779,6 @@ def get_encoder_backend(config, num_audio_tracks):
 #        encoder_cmd = "mpeg2enc "+config["mpeg2enc_params"]+" -o "+config["workdir"]+"/video.mpg -" # < "$workdir"/$yuvfifo >> "$outdir/$logfile" 2>&1 & 
     
     backend = gst.Bin("backend")
-    video_ident = gst.element_factory_make("identity")
-    video_ident.props.single_segment = 1
     video_caps = gst.element_factory_make("capsfilter")
     video_caps.props.caps = config.get_video_caps("I420")
     video_scale = gst.element_factory_make("videoscale")
@@ -785,7 +787,7 @@ def get_encoder_backend(config, num_audio_tracks):
     if 1:
         video_caps2.props.caps = config.get_video_caps("I420")
         video_enc = gst.element_factory_make("ffenc_mpeg4", "encoder")
-        video_enc.props.bitrate = config["video_bitrate"] * 1000
+        video_enc.props.bitrate = config["video_bitrate"] * 1000 * 4
         mux = gst.element_factory_make("mp4mux", "mux")
         extension = "mp4"
         config["ac3"] = False # this mux can't handle ac3
@@ -819,9 +821,9 @@ def get_encoder_backend(config, num_audio_tracks):
     sink   = gst.element_factory_make("filesink", "sink")
     sink.set_property("location", config["outfile"])
 
-    backend.add(video_ident, video_caps, video_scale, video_caps2, video_enc, mqueue, mux, sink)
-    gst.element_link_many(video_ident, video_caps, video_scale, video_caps2, video_enc, mqueue, mux, sink)
-    backend.add_pad(gst.GhostPad("video_sink", video_ident.get_pad("sink")))
+    backend.add(video_caps, video_scale, video_caps2, video_enc, mqueue, mux, sink)
+    gst.element_link_many(video_caps, video_scale, video_caps2, video_enc, mqueue, mux, sink)
+    backend.add_pad(gst.GhostPad("video_sink", video_caps.get_pad("sink")))
 
     for i in range(num_audio_tracks):
         audio_ident = gst.element_factory_make("identity")
@@ -888,10 +890,14 @@ def start(pipeline, eos_cb, err_cb):
     def on_message(bus, message, eos_cb, err_cb):
         t = message.type
 	if t == gst.MESSAGE_EOS:
+            print "EOS"
             eos_cb()
 	elif t == gst.MESSAGE_ERROR:
             err, debug = message.parse_error()
-            err_cb(err, debug)
+            print "error=", err
+            print "debug=", debug
+            pipeline.send_event(gst.event_new_eos())
+            #err_cb(err, debug)
     bus.connect("message", on_message, eos_cb, err_cb)
     pipeline.set_state(gst.STATE_PLAYING)
     pipeline.get_state() # wait for it to transition
