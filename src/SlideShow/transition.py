@@ -133,7 +133,7 @@ smptes = [
     ]
 
 kenburns = [
-    "swap-lr", "swap-rl", "swap-tb", "swap-bt", "swap-random", "border-train-lr", "border-train-rl", "border-train-tb", "border-train-bt", "border-train-random", "train-lr", "train-rl", "train-tb", "train-bt", "train-random", "reel-lr", "reel-rl", "reel-tb", "reel-bt", "reel-random", 
+    "swap-lr", "swap-rl", "swap-tb", "swap-bt", "swap-random", "border-train-lr", "border-train-rl", "border-train-tb", "border-train-bt", "border-train-random", "train-lr", "train-rl", "train-tb", "train-bt", "train-random", "reel-lr", "reel-rl", "reel-tb", "reel-bt", "reel-random", "turn-over-lr", "turn-over-rl",   "turn-over-tb", "turn-over-bt", "turn-over-random", 
 ]
 def get_kenburns_bin(name, config, duration, start1):
     bin = gst.Bin()
@@ -352,5 +352,39 @@ def get_kenburns_bin(name, config, duration, start1):
             c2.set("yrot", 0,           -90)
             c2.set("zpos", 0,           2.5)
             c2.set("zpos", duration/4,  2.5)
+
+
+    elif name.startswith("turn-over"):
+        c1 = gst.Controller(kb1, "yrot", "xrot")
+        c1.set_interpolation_mode("xrot", gst.INTERPOLATE_LINEAR)
+        c1.set_interpolation_mode("yrot", gst.INTERPOLATE_LINEAR)
+        c2 = gst.Controller(kb2, "yrot", "xrot")
+        c2.set_interpolation_mode("xrot", gst.INTERPOLATE_LINEAR)
+        c2.set_interpolation_mode("yrot", gst.INTERPOLATE_LINEAR)
+        ctrls = [c1, c2]
+
+        c1.set("xrot", start1+0, 0)
+        c1.set("yrot", start1+0, 0)
+        c2.set("xrot", duration, 0)
+        c2.set("yrot", duration, 0)
+
+        if name.endswith("random"):
+            name = random.sample(["lr","rl","tb","bt"],1)[0]
+        if name.endswith("lr"):
+            c1.set("xrot", start1+duration/2,  90)
+            c2.set("xrot", 0,          -90)
+            c2.set("xrot", duration/2, -90)
+        elif name.endswith("rl"):
+            c1.set("xrot", start1+duration/2,  -90)
+            c2.set("xrot", 0,          90)
+            c2.set("xrot", duration/2, 90)
+        elif name.endswith("tb"):
+            c1.set("yrot", start1+duration/2,  90)
+            c2.set("yrot", 0,          -90)
+            c2.set("yrot", duration/2, -90)
+        elif name.endswith("bt"):
+            c1.set("yrot", start1+duration/2,  -90)
+            c2.set("yrot", 0,          90)
+            c2.set("yrot", duration/2, 90)
 
     return bin, ctrls
