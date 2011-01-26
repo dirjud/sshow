@@ -55,6 +55,28 @@ def render_subtitle(element, elements):
         elements.append(subtitle)
         Annotate.add_subtitle(element, subtitle, element.subtitle, element.config)
 
+def process_effects(element, duration, elements, custom_config={}):
+    caps = gst.element_factory_make("capsfilter")
+    elements.append(caps)
+    caps.set_property("caps", element.config.get_video_caps("AYUV"))
+    elements.append(gst.element_factory_make("ffmpegcolorspace"))
+    elements.append(gst.element_factory_make("frei0r-filter-bw0r"))
+    #elements[-1].props.blur = 10
+    elements.append(gst.element_factory_make("ffmpegcolorspace"))
+    caps = gst.element_factory_make("capsfilter")
+    elements.append(caps)
+    caps.set_property("caps", element.config.get_video_caps("AYUV"))
+    
+
+    Annotate.add_annotations(element, duration, elements)
+    render_subtitle(element, elements)
+    caps = gst.element_factory_make("capsfilter")
+    elements.append(caps)
+    caps.set_property("caps", element.config.get_video_caps("AYUV"))
+    for gst_element in elements:
+        if gst_element.get_name().startswith("kenburns"):
+            KenBurns.configure_kenburns(element, gst_element, duration, custom_config)
+
 
 ################################################################################
 class Effect():
@@ -133,11 +155,9 @@ class Image(Element):
             x += ":" + fx
         return x
 
-    def get_bin(self, duration=None, border=None):
+    def get_bin(self, duration=None, custom_config={}):
         if duration is None:
             duration = self.duration
-        if border is None:
-            border = self.config["border"]
 
         self.width, self.height = get_dims(self.filename)
 
@@ -145,22 +165,19 @@ class Image(Element):
         elements = []
         for name in [ "filesrc", "decodebin2", "ffmpegcolorspace", "capsfilter", "imagefreeze", "kenburns", ]:
             elements.append(gst.element_factory_make(name))
-            exec("%s = elements[-1]" % name)
-
-        Annotate.add_annotations(self, duration, elements)
-        render_subtitle(self, elements)
-        caps = gst.element_factory_make("capsfilter")
-        elements.append(caps)
+            try:
+                exec("%s = elements[-1]" % name)
+            except:
+                pass
 
         filesrc.set_property("location",  self.filename)
         capsfilter.set_property("caps", gst.Caps("video/x-raw-yuv,format=(fourcc)AYUV"))
-        caps.set_property("caps", self.config.get_video_caps("AYUV"))
+
+        process_effects(self, duration, elements, custom_config)
 
         bin.add(*elements)
         filesrc.link(decodebin2)
         gst.element_link_many(*elements[2:])
-
-        KenBurns.configure_kenburns(self, kenburns, duration, border=border)
 
         def on_pad(src_element, pad, data, sink_element):
             sinkpad = sink_element.get_compatible_pad(pad, pad.get_caps())
@@ -199,9 +216,8 @@ class Blank(Element):
         videotestsrc.props.pattern = "black"
         videotestsrc.props.foreground_color = 0
         videotestsrc.props.background_color = 0
-        Annotate.add_annotations(self, duration, elements)
-        render_subtitle(self, elements)
         capsfilter.set_property("caps", self.config.get_video_caps("AYUV"))
+        process_effects(self, duration, elements)
 
         bin.add(*elements)
         gst.element_link_many(*elements)
@@ -258,7 +274,7 @@ class Background(Element):
             return self.bg.get_bin()
         elif(self.image):
             self.image.set_config(self.config)
-            bin = self.image.get_bin(duration, border=0)
+            bin = self.image.get_bin(duration, { "border":0 })
             return bin
         elif(self.bg in Background.colors):
             return self.get_bg_color_bin(colorLU[self.bg])
@@ -271,12 +287,10 @@ class Background(Element):
         src.props.pattern = "white"
         src.props.foreground_color = get_color(bgcolor)
         elements.append(src)
-        render_subtitle(self, elements)
-        if(self.duration):
-            Annotate.add_annotations(self, self.duration, elements)
         caps = gst.element_factory_make("capsfilter")
         caps.props.caps = self.config.get_video_caps("AYUV")
         elements.append(caps)
+        process_effects(self, self.duration, elements)
         bin = gst.Bin()
         bin.add(*elements)
         gst.element_link_many(*elements)
@@ -325,7 +339,7 @@ class Title(Element):
             Annotate.add_title(self, textoverlay, self.title1, "title", self.config)
             elements.append(textoverlay)
 
-        Annotate.add_annotations(self, duration, elements)
+        process_effects(self, duration, elements)
 
         bin = gst.Bin()
         bin.add(*elements)
@@ -497,11 +511,10 @@ class TestVideo(Element):
             except:
                 raise Exception("Error setting specified test pattern.")
         elements.append(src)
-        render_subtitle(self, elements)
-        Annotate.add_annotations(self, duration, elements)
         caps = gst.element_factory_make("capsfilter")
         caps.props.caps = self.config.get_video_caps("AYUV")
         elements.append(caps)
+        process_effects(self, duration, elements)
         bin.add(*elements)
         gst.element_link_many(*elements)
         bin.add_pad(gst.GhostPad("src", elements[-1].get_pad("src")))
@@ -549,9 +562,7 @@ class Video(Element):
         cap2.props.caps = gst.Caps("video/x-raw-yuv,format=(fourcc)AYUV")
         cap3.props.caps = self.config.get_video_caps("AYUV")
         filesrc.props.location = self.filename
-        Annotate.add_annotations(self, duration, elements)
-        render_subtitle(self, elements)
-
+        process_effects(self, duration, elements)
         bin.add(*elements)
         gst.element_link_many(*elements[2:])
         filesrc.link(decodebin2)
@@ -566,8 +577,5 @@ class Video(Element):
 
         bin.add_pad(gst.GhostPad("src", elements[-1].get_pad("src")))
         return bin
-
-
-
 
 #    elif image[-1] == 'musictitle':
