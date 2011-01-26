@@ -56,26 +56,29 @@ def render_subtitle(element, elements):
         Annotate.add_subtitle(element, subtitle, element.subtitle, element.config)
 
 def process_effects(element, duration, elements, custom_config={}):
-    caps = gst.element_factory_make("capsfilter")
-    elements.append(caps)
-    caps.set_property("caps", element.config.get_video_caps("AYUV"))
-    elements.append(gst.element_factory_make("ffmpegcolorspace"))
-    elements.append(gst.element_factory_make("frei0r-filter-bw0r"))
-    #elements[-1].props.blur = 10
-    elements.append(gst.element_factory_make("ffmpegcolorspace"))
-    caps = gst.element_factory_make("capsfilter")
-    elements.append(caps)
-    caps.set_property("caps", element.config.get_video_caps("AYUV"))
+    #if not(custom_config):
+    #    caps = gst.element_factory_make("capsfilter")
+    #    elements.append(caps)
+    #    caps.set_property("caps", element.config.get_video_caps("AYUV", custom_config))
+    #    elements.append(gst.element_factory_make("ffmpegcolorspace"))
+    #    #elements.append(gst.element_factory_make("frei0r-filter-bw0r"))
+    #    #elements.append(gst.element_factory_make("frei0r-filter-cartoon"))
+    #    #elements.append(gst.element_factory_make("frei0r-filter-scale0tilt"))
+    #    elements.append(gst.element_factory_make("agingtv"))
+    #    elements.append(gst.element_factory_make("ffmpegcolorspace"))
+    #    caps = gst.element_factory_make("capsfilter")
+    #    elements.append(caps)
+    #    caps.set_property("caps", element.config.get_video_caps("AYUV",custom_config))
     
 
     Annotate.add_annotations(element, duration, elements)
     render_subtitle(element, elements)
     caps = gst.element_factory_make("capsfilter")
     elements.append(caps)
-    caps.set_property("caps", element.config.get_video_caps("AYUV"))
+    caps.set_property("caps", element.config.get_video_caps("AYUV", custom_config))
     for gst_element in elements:
         if gst_element.get_name().startswith("kenburns"):
-            KenBurns.configure_kenburns(element, gst_element, duration, custom_config)
+            KenBurns.configure_kenburns(element, gst_element, duration)
 
 
 ################################################################################
@@ -172,6 +175,9 @@ class Image(Element):
 
         filesrc.set_property("location",  self.filename)
         capsfilter.set_property("caps", gst.Caps("video/x-raw-yuv,format=(fourcc)AYUV"))
+        cap2 = gst.element_factory_make("capsfilter")
+        elements.append(cap2)
+        cap2.props.caps = self.config.get_video_caps("AYUV", custom_config)
 
         process_effects(self, duration, elements, custom_config)
 
@@ -217,7 +223,7 @@ class Blank(Element):
         videotestsrc.props.foreground_color = 0
         videotestsrc.props.background_color = 0
         capsfilter.set_property("caps", self.config.get_video_caps("AYUV"))
-        process_effects(self, duration, elements)
+        #process_effects(self, duration, elements)
 
         bin.add(*elements)
         gst.element_link_many(*elements)
@@ -274,7 +280,7 @@ class Background(Element):
             return self.bg.get_bin()
         elif(self.image):
             self.image.set_config(self.config)
-            bin = self.image.get_bin(duration, { "border":0 })
+            bin = self.image.get_bin(duration, dict(border=0))
             return bin
         elif(self.bg in Background.colors):
             return self.get_bg_color_bin(colorLU[self.bg])
@@ -288,9 +294,9 @@ class Background(Element):
         src.props.foreground_color = get_color(bgcolor)
         elements.append(src)
         caps = gst.element_factory_make("capsfilter")
-        caps.props.caps = self.config.get_video_caps("AYUV")
+        caps.props.caps = self.config.get_video_caps("AYUV", dict(border=0))
         elements.append(caps)
-        process_effects(self, self.duration, elements)
+        process_effects(self, self.duration, elements, dict(border=0))
         bin = gst.Bin()
         bin.add(*elements)
         gst.element_link_many(*elements)
@@ -317,14 +323,14 @@ class Title(Element):
         if duration is None:
             duration = self.duration
 
-        # generate the default background in the event one is not supplied
-        background = Background("gen", "background", 0, "", "black")
-        background.set_config(self.config)
-        background.initialize()
-        
-        alpha = gst.element_factory_make("alpha")
-        alpha.props.alpha = 0.0
-        elements = [ background.get_bin(), alpha ]
+        src = gst.element_factory_make("videotestsrc")
+        src.props.pattern = "black"
+        src.props.foreground_color = 0;
+        src.props.background_color = 0;
+        caps= gst.element_factory_make("capsfilter")
+        caps.props.caps = self.config.get_video_caps("AYUV")
+        elements = [src, caps]
+
         if self.name == "titlebar":
             if self.title1:
                 textoverlay = gst.element_factory_make("textoverlay")

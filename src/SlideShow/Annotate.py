@@ -11,7 +11,7 @@ def add_annotations(self, duration, elements):
             parse_annotate_params(self, annotate, fx.param, duration)
 
 def normalize_font_size(size, config):
-    return int(size/480.*config["height"]*2)/10.
+    return int(size/480.*config["height"]*10)/10.
 
 def add_title(self, element, text, which, config):
     if which == "title":
@@ -35,6 +35,7 @@ def add_title(self, element, text, which, config):
 
     param = "text=%s;ypos=%s;xpos=%s;color=%s;justification=%s;size=%s" % (text, ypos, xpos, color, justification, size)
     log.debug(param)
+    print param
     parse_annotate_params(self, element, param)
 
 
@@ -77,7 +78,11 @@ def parse_annotate_params(self, element, params, duration=0):
             props[key] = val
 
     if props.has_key("size"):
-        props["size"] = round(self.config["height"] * eval(props["size"].replace("%","")) / 10.)/10.
+        if props["size"].endswith("%"):
+            props["size"] = round(self.config["height"] * eval(props["size"].replace("%","")) / 10.)/10.
+        else:
+            props["size"] = eval(props["size"])
+
 
     font = "%s %s %gpx" % (props["font"], props["fontstyle"], props["size"],)
     props["text"] = props["text"].replace("\\n", "\n")
@@ -123,6 +128,7 @@ def parse_annotate_params(self, element, params, duration=0):
 
     set_prop(element, "vertical-render", int(props["vertical"]))
     set_prop(element, "font-desc",       font)
+    print font
     set_prop(element, "auto-resize",     False)
     set_prop(element, "line-alignment",  props["justification"])
 

@@ -169,13 +169,16 @@ class Config(dict):
     def set_var(self, key, val):
         self[key] = val
 
-    def get_video_caps(self, fourcc="AYUV", width=None, height=None):
+    def get_video_caps(self, fourcc="AYUV", custom_config={}):
         """returns a gst.Caps with the configured caps. Set the fourcc 
         argument to specify a desired format, otherwise leave it None"""
-        if width  is None: width  = self["width"]
-        if height is None: height = self["height"]
+        for key in ["border", "width", "height",]:
+            if custom_config.has_key(key):
+                exec("%s = custom_config['%s']" % (key, key))
+            else:
+                exec("%s = self['%s']" % (key, key))
 
-        caps = "video/x-raw-yuv,width=%d,height=%d,framerate=(fraction)%d/%d,format=(fourcc)%s" % (width, height, self["framerate_numer"], self["framerate_denom"], fourcc)
+        caps = "video/x-raw-yuv,width=%d,height=%d,framerate=(fraction)%d/%d,format=(fourcc)%s" % (width-2*border, height-2*border, self["framerate_numer"], self["framerate_denom"], fourcc)
         return gst.Caps(caps)
 
     def get_audio_caps(self):

@@ -313,7 +313,7 @@ def initialize_elements(elements, config):
 
 
     height = config["dvd_height"]
-    width = int(round(config["dvd_height"] * config["aspect_ratio_float"]))
+    width = int(round(height * config["aspect_ratio_float"]))
     config["width"]  = width
     config["height"] = height
 
@@ -417,7 +417,7 @@ def add_transition(element, comp, start_time, offset1, config):
 
 
 def get_video_bin(elements, config):
-    comp   = gst.element_factory_make("gnlcomposition", "composition")
+    comp   = gst.element_factory_make("gnlcomposition", "foreground")
     bgcomp = gst.element_factory_make("gnlcomposition", "background")
     
     # we will also create the syncronization information necessary to build
@@ -539,6 +539,17 @@ def get_video_bin(elements, config):
     bin = gst.Bin()
     cap1 = gst.element_factory_make("capsfilter")
     cap2 = gst.element_factory_make("capsfilter")
+    box  = gst.element_factory_make("videobox")
+    box.props.bottom = -config["border"]
+    box.props.top = -config["border"]
+    box.props.left = -config["border"]
+    box.props.right = -config["border"]
+    box.props.border_alpha=0
+    try:
+        shadow = gst.element_factory_make("shadow")
+    except:
+        shadow = gst.element_factory_make("identity")
+        
     ident1 = gst.element_factory_make("identity")
     ident2 = gst.element_factory_make("identity")
     ident1.props.single_segment = 1
@@ -551,19 +562,29 @@ def get_video_bin(elements, config):
     mixer.props.background = "black"
     color = gst.element_factory_make("ffmpegcolorspace")
     caps = gst.element_factory_make("capsfilter")
-    cap1.props.caps = config.get_video_caps("AYUV")
+    cap1.props.caps = config.get_video_caps("AYUV", dict(border=0))
     cap2.props.caps = config.get_video_caps("AYUV")
-    caps.props.caps = config.get_video_caps("I420")
-    bin.add(bgcomp, comp, ident1, ident2, cap1, cap2, mqueue, mixer, color, caps)
-    gst.element_link_many(cap1, ident1, mqueue, mixer, color, caps)
-    gst.element_link_many(cap2, ident2, mqueue, mixer)
+    caps.props.caps = config.get_video_caps("I420", dict(border=0))
+
+    bin.add(bgcomp, ident1, cap1)
+    bin.add(comp, ident2, cap2, box, shadow)
+    bin.add(mqueue, mixer, color, caps)
+    gst.element_link_many(mixer, color, caps)
+    gst.element_link_many(cap1, ident1, mqueue, mixer)
+    gst.element_link_many(cap2, ident2, mqueue, box, shadow, mixer)
+    
+    #mixer.get_pad("sink_1").props.xpos = config["border"]
+    #mixer.get_pad("sink_1").props.ypos = config["border"]
 
     bin.add_pad(gst.GhostPad("src", caps.get_pad("src")))
     def on_pad(comp, pad, element):
         capspad = element.get_pad("sink")
         pad.link(capspad)
+    def on_pad2(comp, pad, element):
+        capspad = element.get_pad("sink")
+        pad.link(capspad)
     bgcomp.connect("pad-added", on_pad, cap1)
-    comp.connect("pad-added",   on_pad, cap2)
+    comp.connect("pad-added",   on_pad2, cap2)
 
     print "Video Composition:"
     print_gnlcomp(comp)
@@ -780,25 +801,25 @@ def get_encoder_backend(config, num_audio_tracks):
     
     backend = gst.Bin("backend")
     video_caps = gst.element_factory_make("capsfilter")
-    video_caps.props.caps = config.get_video_caps("I420")
+    video_caps.props.caps = config.get_video_caps("I420", dict(border=0))
     video_scale = gst.element_factory_make("videoscale")
     video_caps2 = gst.element_factory_make("capsfilter")
 
     if 1:
-        video_caps2.props.caps = config.get_video_caps("I420")
+        video_caps2.props.caps = config.get_video_caps("I420", dict(border=0))
         video_enc = gst.element_factory_make("ffenc_mpeg4", "encoder")
         video_enc.props.bitrate = config["video_bitrate"] * 1000 * 4
         mux = gst.element_factory_make("mp4mux", "mux")
         extension = "mp4"
         config["ac3"] = False # this mux can't handle ac3
     elif 0:
-        video_caps2.props.caps = config.get_video_caps("I420")
+        video_caps2.props.caps = config.get_video_caps("I420", dict(border=0))
         video_enc = gst.element_factory_make("x264enc",    "video_enc")
         video_enc.props.bitrate = config["video_bitrate"]
         mux = gst.element_factory_make("mp4mux", "mux")
         extension = "mp4"
     elif 0:
-        video_caps2.props.caps = config.get_video_caps("I420", width=720, height=480)
+        video_caps2.props.caps = config.get_video_caps("I420", dict(border=0, width=720, height=480))
         video_enc = gst.element_factory_make("ffenc_mpeg2video", "video_enc")
         video_enc.props.bitrate = config["video_bitrate"] * 1000
         mux = gst.element_factory_make("mplex", "mux")
@@ -807,7 +828,7 @@ def get_encoder_backend(config, num_audio_tracks):
         mux.props.vbr = True
         extension = "vob"
     else:
-        video_caps2.props.caps = config.get_video_caps("I420", width=720, height=480)
+        video_caps2.props.caps = config.get_video_caps("I420", dict(border=0, width=720, height=480))
         video_enc = gst.element_factory_make("mpeg2enc",    "video_enc")
         video_enc.props.format = 8 # dvd mpeg-2 for dvdauthor
         video_enc.props.bitrate = config["video_bitrate"]
@@ -845,7 +866,7 @@ def get_preview_backend(config, num_audio_tracks):
     #audio_volume = gst.element_factory_make("volume","volume")
 
     video_caps = gst.element_factory_make("capsfilter")
-    video_caps.props.caps = config.get_video_caps("I420")
+    video_caps.props.caps = config.get_video_caps("I420", dict(border=0))
     mqueue = gst.element_factory_make("multiqueue")
     mqueue.props.max_size_time = 10 * gst.SECOND
     mqueue.props.max_size_bytes   = 0
