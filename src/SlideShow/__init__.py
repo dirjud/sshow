@@ -304,33 +304,27 @@ def initialize_elements(elements, config):
     config["sq_to_dvd_pixels"]=str(config["resize_factor"]*100)+"x100%"
 
 
-    
+
+    if config.has_key("output_size"):
+	config["width"], config["height"] = map(int, config["output_size"].split("x"))
+    else:
+        height = config["dvd_height"]
+        width = int(round(height * config["aspect_ratio_float"]))
+        config["width"]  = width
+        config["height"] = height
+
+
+
+    if config.has_key("output_framerate"):
+        config["framerate"]=float(config["output_framerate"])
     framerate_numer = 30000 #int(round(config["framerate"] * 100))
     framerate_denom = 1000 # 1001
     config["framerate"] = framerate_numer / float(framerate_denom)
     config["framerate_numer"] = framerate_numer
     config["framerate_denom"] = framerate_denom
 
-
-    height = config["dvd_height"]
-    width = int(round(height * config["aspect_ratio_float"]))
-    config["width"]  = width
-    config["height"] = height
-
     config["audio_caps"] = "audio/x-raw-int, endianness=(int)1234, signed=(boolean)true, width=(int)16, depth=(int)16, rate=(int)44100, channels=2"
 
-    if config.has_key("output_size"):
-	# used user-set size, instead of defaults!
-	config.update(dict(
-                orig_dvd_width=config["dvd_width"],
-                orig_dvd_height=config["dvd_height"],
-                ))
-	config["dvd_width"], config["dvd_height"] = config["output_size"].split("x")
-	if config["output_format"] in ['flv', 'swf' ]:
-            config["video_bitrate"] = config["video_bitrate"] * config["dvd_width"] * config["dvd_height"] / config["orig_dvd_width"] / config["orig_dvd_height"]
-
-    if config.has_key("output_framerate"):
-        config["framerate"]=float(config["output_framerate"])
 
 
     audio_index = {}
