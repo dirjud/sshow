@@ -40,7 +40,7 @@ def get_dims(img_file):
 
 def get_duration(filename):
     d = gst.parse_launch("filesrc location="+filename+" ! decodebin2 ! fakesink")
-    d.set_state(gst.STATE_PAUSED)
+    d.set_state(gst.STATE_PLAYING)
     d.get_state() # blocks until state transition has finished
     duration = d.query_duration(gst.Format(gst.FORMAT_TIME))[0]
     d.set_state(gst.STATE_NULL)
@@ -387,15 +387,27 @@ class Transition(Element):
 class Audio(Element):
     extensions = [ 'ogg', 'mp3', 'wav', 'm4a', 'aac' ]
 
-    def __init__(self, location, filename, track, effects):
+    def __init__(self, location, filename, settings, effects):
         Element.__init__(self, location)
         if not(os.path.exists(filename)):
             raise Exception("Audio file "+filename+" does not exist.")
 
         self.name     = os.path.basename(filename)
         self.filename = filename
-        self.track = track
+        self.track = settings["track"]
         self.effects= effects
+        self.settings = settings
+        if self.settings.has_key("start"):
+            self.start = int(self.settings["start"] * gst.SECOND)
+        else:
+            self.start = 0
+        if self.settings.has_key("duration"):
+            self.duration = int(self.settings["duration"] * gst.SECOND)
+
+        if self.settings.has_key("method"):
+            self.method = self.settings["method"]
+        else:
+            self.method = "concatenate"
 
         if(self.track < 1):
             raise Exception("ERROR: Must specify positive and non-zero track number.  Fix this audio file track number!")
@@ -418,7 +430,8 @@ class Audio(Element):
         x = "%s:%s" % (self.filename, self.track)
 
     def initialize(self):
-        self.duration = get_duration(self.filename)
+        if not(hasattr(self, "duration")):
+            self.duration = get_duration(self.filename) - self.start
 
     def get_bin(self, duration=None):
         if self.filename == "silence":
@@ -426,30 +439,38 @@ class Audio(Element):
 
         bin = gst.Bin()
         elements = []
-        for name in [ "filesrc", "decodebin2", "audioconvert", "volume", "capsfilter",  ]:
+        for name in [ "filesrc", "decodebin2", "audioconvert", "audioresample", "capsfilter", "volume",  ]:
             elements.append(gst.element_factory_make(name, name))
             exec("%s = elements[-1]" % name)
     
         capsfilter.props.caps = self.config.get_audio_caps()
+        caps2=gst.element_factory_make("capsfilter")
+        caps2.props.caps = self.config.get_audio_caps()
+        elements.append(caps2)
         filesrc.set_property("location",  self.filename)
         bin.add(*elements)
         filesrc.link(decodebin2)
-        audioconvert.link(volume)
-        volume.link(capsfilter)
+        gst.element_link_many(*elements[2:])
         
+        if(self.settings.has_key("volume")):
+            vol = self.settings["volume"]
+        else:
+            vol = 1.0
+        print "vol=",vol, " settings=",self.settings
+
         c = gst.Controller(volume, "volume")
         c.set_interpolation_mode("volume", gst.INTERPOLATE_LINEAR)
         if self.fadein:
-            c.set("volume", 0,    0.0)
-            c.set("volume", self.fadein, 1.0)
+            c.set("volume", self.start,    0.0)
+            c.set("volume", self.start+self.fadein, vol)
         else:
-            c.set("volume", 0, 1.0)
+            c.set("volume", 0, vol)
             
         if self.fadeout:
-            c.set("volume", duration-self.fadeout, 1.0)
+            c.set("volume", duration-self.fadeout, vol)
             c.set("volume", duration,      0.0)
         else:
-            c.set("volume", duration, 1.0)
+            c.set("volume", duration, vol)
         self.controllers.append(c)
         
         def on_pad(src_element, pad, data, sink_element):
@@ -457,7 +478,7 @@ class Audio(Element):
             pad.link(sinkpad)
 
         decodebin2.connect("new-decoded-pad", on_pad, audioconvert)
-        bin.add_pad(gst.GhostPad("src", capsfilter.get_pad("src")))
+        bin.add_pad(gst.GhostPad("src", elements[-1].get_pad("src")))
         return bin
 
 
@@ -535,24 +556,33 @@ class Chapter(Element):
         return "chapter"
     
 class Video(Element):
-    extensions = [ "avi", "mp4", "mpg", "vob" ]
+    extensions = [ "avi", "mp4", "mpg", "vob", "mts" ]
 
-    def __init__(self, location, filename, duration, subtitle, effects):
+    def __init__(self, location, filename, duration, subtitle, settings, effects):
         Element.__init__(self, location)
         self.name     = os.path.basename(filename)
         self.filename = filename
         self.duration = duration
         self.subtitle = subtitle
         self.effects  = effects
+        self.settings = settings
+        if(self.settings.has_key("start")):
+            self.start = int(self.settings["start"] * gst.SECOND)
         
     def initialize(self):
         if not(self.duration):
-            self.duration = get_duration(self.filename)
+            try:
+                self.duration = get_duration(self.filename)
+            except:
+                log.warn("Cannot get duration of video file %s. You must manually specify the duration." % self.filename)
+                self.duration = 5 * gst.SECOND
 
     def get_bin(self, background=None, duration=None):
         if duration is None:
             duration = self.duration
 
+        self.width = self.config["width"]
+        self.height = self.config["height"]
         elements = []
         bin = gst.Bin()
         capnum = 1
@@ -572,9 +602,9 @@ class Video(Element):
         bin.add(*elements)
         gst.element_link_many(*elements[2:])
         filesrc.link(decodebin2)
-        KenBurns.configure_kenburns(self, kenburns, duration)
         
         def on_pad(src_element, pad, data, sink_element):
+            print pad
             sinkpad = sink_element.get_compatible_pad(pad, pad.get_caps())
             if sinkpad:
                 pad.link(sinkpad)
@@ -582,6 +612,7 @@ class Video(Element):
         decodebin2.connect("new-decoded-pad", on_pad, elements[2])
 
         bin.add_pad(gst.GhostPad("src", elements[-1].get_pad("src")))
+        #bin.add_pad(gst.GhostPad("audio_src", audio_elements[-1].get_pad("src")))
         return bin
 
 #    elif image[-1] == 'musictitle':

@@ -434,7 +434,10 @@ def get_video_bin(elements, config):
         bgsrc = gst.element_factory_make("gnlsource", config.get_unique(background.bg))
         bgsrc.add(background.get_bin())
         bgsrc.props.start = start_time
-        bgsrc.props.media_start = 0
+        if hasattr(background, "start"):
+            bgsrc.props.media_start = background.start
+        else:
+            bgsrc.props.media_start = 0
         bgsrc.props.priority = bg_priority
         bgcomp.add(bgsrc)
         return bgsrc
@@ -493,7 +496,10 @@ def get_video_bin(elements, config):
                 src.add(element.get_bin(dur))
                 src.props.start          = start_time - prev_dur
                 src.props.duration       = dur
-                src.props.media_start    = 0
+                if hasattr(element, "start"):
+                    src.props.media_start= element.start
+                else:
+                    src.props.media_start= 0
                 src.props.media_duration = dur
                 src.props.priority       = priority
                 comp.add(src)
@@ -515,7 +521,7 @@ def get_video_bin(elements, config):
                 audio_info[track]["elements"].append(element)
                 audio_info[track]["starts"].append(start_time)
                 audio_info[track]["durations"].append(dur)
-            
+
             elif element.isa("Chapter"):
                 chapter_times.append(start_time)
 
@@ -606,6 +612,8 @@ def get_audio_bin(elements, config, info):
         audio_info = { 1 : dict( elements=[Element.Silence("generated", "silence", 1, config=config)], starts=[0], durations=[-1] ) }
         tracks = [1]
 
+    print audio_info
+
     for track in tracks:
         elements  = audio_info[track]["elements"]
         starts    = audio_info[track]["starts"]
@@ -628,19 +636,22 @@ def get_audio_bin(elements, config, info):
         durations2= [  ]
 
         reached_end_of_video = False
+        print "len=", len(elements)
         for pos in range(len(elements)):
+            print "pos=",pos, " element=", elements[pos]
             # calculate the position of the next segment
             pos_next = None # None means the next is the end of the pipeline
             for pos2 in range(pos+1, len(elements)):
-                if starts[pos2] == starts[pos]: 
+                if starts[pos2] == starts[pos] or elements[pos2].method == "parallel": 
                     continue #skip any that will be concat'd to this one
                 else:
                     pos_next = pos2
                     break
+            print "pos_next=", pos_next
 
             # concatenate elements with the same starting time by calculating
             # the 'start' time, which is the adjusted start time
-            if (pos == 0) or (starts[pos] != starts[pos-1]):
+            if (pos == 0) or (starts[pos] != starts[pos-1]) or elements[pos].method == "parallel":
                 # this is the easy case when the audio element is synced
                 # directly to a video element
                 start = starts[pos] 
@@ -658,7 +669,7 @@ def get_audio_bin(elements, config, info):
                 # element), so put its 'start' time at the end of the
                 # previous audio element minus any fadeout time on the
                 # previous element.
-                start = starts[pos-1] + durations[pos-1] - elements[pos-1].fadeout
+                start = starts2[pos-1] + durations[pos-1] - elements[pos-1].fadeout
 
                 # Now make sure this starting time is valid. It is invalid
                 # if it is longer than the video sequence or if starts past
@@ -681,18 +692,20 @@ def get_audio_bin(elements, config, info):
                     duration = starts[pos_next] - start
             else:
                 duration = durations[pos]
+            print "duration=", duration
 
             # now let's clip the duration if it is too long
             if pos_next is None:
                 if start + duration > info["duration"]:
                     duration = info["duration"] - start
             else:
+                if start + duration > starts[pos_next]:
+                    duration = starts[pos_next] - start
+
                 if start + duration > info["duration"]:
                     duration = info["duration"] - start
                     reached_end_of_video = True
                 
-                if start + duration > starts[pos_next]:
-                    duration = starts[pos_next] - start
 
             # now add the element to final audio list
             elements2.append(elements[pos])
@@ -717,6 +730,7 @@ def get_audio_bin(elements, config, info):
         # now let's build the gnlcomposition for this audio track
         comp = gst.element_factory_make("gnlcomposition")
         priority = 1
+        print elements2, durations2, starts2
         for pos, element in enumerate(elements2):
             dur   = durations2[pos]
             start = starts2[pos]
@@ -725,7 +739,10 @@ def get_audio_bin(elements, config, info):
             src.add(element.get_bin(dur))
             src.props.start          = start
             src.props.duration       = dur
-            src.props.media_start    = 0
+            if hasattr(element, "start"):
+                src.props.media_start= element.start
+            else:
+                src.props.media_start= 0
             src.props.media_duration = dur
             src.props.priority       = priority
             comp.add(src)

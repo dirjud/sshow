@@ -231,8 +231,9 @@ class DVDSlideshow():
     def getVideo(location, filename, fields):
         duration = DVDSlideshow.parse_duration(DVDSlideshow.pop(fields),allow_zero=True)
         subtitle = DVDSlideshow.pop(fields)
+        settings = DVDSlideshow.parse_key_values(DVDSlideshow.pop(fields))
         effects = DVDSlideshow.parse_effects(fields)
-        return Element.Video(location, filename, duration, subtitle, effects)
+        return Element.Video(location, filename, duration, subtitle, settings, effects)
 
     @staticmethod
     def getTitle(location, name, fields):
@@ -252,24 +253,24 @@ class DVDSlideshow():
     @staticmethod
     def parse_track(track):
         if(track == ""):
-            track = 1
+            settings = dict(track = 1)
         else:
             try:
-                track = int(track)
+                settings = dict(track = int(track))
             except:
-                raise Exception("Track is not an integer")
-        return track
+                settings = DVDSlideshow.parse_key_values(track)
+        return settings
 
     @staticmethod
     def getAudio(location, filename, fields):
-        track = DVDSlideshow.parse_track(DVDSlideshow.pop(fields))
-        effects = []
+        settings = DVDSlideshow.parse_track(DVDSlideshow.pop(fields))
+        effects  = []
         while fields:
             name = DVDSlideshow.pop(fields)
             if(name):
                 effects.append(Element.Effect(name, eval(DVDSlideshow.pop(fields))))
             
-        return Element.Audio(location, filename, track, effects)
+        return Element.Audio(location, filename, settings, effects)
 
     @staticmethod
     def getSilence(location, name, fields):
@@ -292,9 +293,16 @@ class DVDSlideshow():
     @staticmethod
     def parse_key_values(field):
         kvdict = {}
-        kvs = field.split(";")
+        kvs = map(str.strip, field.split(";"))
         for kv in kvs:
             if kv:
                 key, value = map(str.strip, kv.split("=",1))
-                kvdict[key] = value
+                try:
+                    kvdict[key] = int(value)
+                except ValueError:
+                    try:
+                        kvdict[key] = float(value)
+                    except ValueError:
+                        kvdict[key] = value
+                    
         return kvdict
