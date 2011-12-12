@@ -389,7 +389,7 @@ class Audio(Element):
 
     def __init__(self, location, filename, settings, effects):
         Element.__init__(self, location)
-        if not(os.path.exists(filename)):
+        if filename != "silence" and not(os.path.exists(filename)):
             raise Exception("Audio file "+filename+" does not exist.")
 
         self.name     = os.path.basename(filename)
@@ -400,14 +400,19 @@ class Audio(Element):
         if self.settings.has_key("start"):
             self.start = int(self.settings["start"] * gst.SECOND)
         else:
+            self.settings["start"] = 0
             self.start = 0
+
         if self.settings.has_key("duration"):
             self.duration = int(self.settings["duration"] * gst.SECOND)
+        else:
+            self.settings["duration"] = -1
 
         if self.settings.has_key("method"):
             self.method = self.settings["method"]
         else:
             self.method = "concatenate"
+            self.settings["method"] = "concatenate"
 
         if(self.track < 1):
             raise Exception("ERROR: Must specify positive and non-zero track number.  Fix this audio file track number!")
@@ -422,15 +427,18 @@ class Audio(Element):
             exec("self."+effect.name+" = dur")
 
     def __str__(self):
-        x = "%s:%s" % (self.filename, self.track)
+        x = "%s:track=%s;start=%s;duration=%s;method=%s" % (self.name, self.track, self.settings["start"], self.settings["duration"], self.settings["method"])
         fx = ":".join([ "%s:%s" % (y.name,y.param) for y in self.effects ])
         if(fx):
             x += ":" + fx
         return x
-        x = "%s:%s" % (self.filename, self.track)
+
 
     def initialize(self):
-        if not(hasattr(self, "duration")):
+        try:
+            if(self.duration < 0):
+                self.duration = get_duration(self.filename) - self.start
+        except:
             self.duration = get_duration(self.filename) - self.start
 
     def get_bin(self, duration=None):
@@ -485,18 +493,14 @@ class Audio(Element):
 class Silence(Audio):
     names = [ 'silence' ]
 
-    def __init__(self, location, name, track, duration=-1, config=None):
-        Element.__init__(self, location)
+    def __init__(self, location, name, settings, effects, config=None):
+        Audio.__init__(self, location, name, settings, effects)
         self.name = name
-        self.track = track
-        self.fadein  = 0
-        self.fadeout = 0
-        self.effects = []
-        self.duration = duration
         self.config=config
 
     def __str__(self):
-        return "%s:%s" % (self.name, self.track,)
+        x = "%s:track=%s;duration=%s" % (self.name, self.track, self.settings["duration"])
+        return x
 
     def initialize(self):
         pass

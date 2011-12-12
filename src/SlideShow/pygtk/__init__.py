@@ -110,7 +110,6 @@ class SlideShowApp(object):
         for path in pathlist:
             element = self.elelist[path][1]
             new_element = SlideShow.Element.Comment(element.location, "#"+str(element))
-            element.replace(new_element)
             self.elelist[path] = [ new_element, new_element ]
         self.on_cursor_changed(self.eleview)
 
@@ -122,7 +121,6 @@ class SlideShowApp(object):
                 text = str(element)[1:]
                 try:
                     new_element = SlideShow.Reader.DVDSlideshow.parse_line(text, self.config, element.location)
-                    element.replace(new_element)
                     self.elelist[path] = [ new_element, new_element ]
                 except:
                     pass
@@ -134,7 +132,6 @@ class SlideShowApp(object):
         pathlist.reverse()
         for path in pathlist:
             element = self.elelist[path][1]
-            element.remove()
             self.elelist.remove(self.elelist.get_iter(path))
         self.select_none()
 
@@ -283,7 +280,6 @@ class SlideShowApp(object):
     def row_edited_cb(self, cell, path, text, user_data=None):
         prevelement = self.elelist[path][1]
         newelement = SlideShow.Reader.DVDSlideshow.parse_line(text, self.config, prevelement.location)
-        prevelement.replace(newelement)
         self.remove_element(prevelement)
         self.add_element(newelement)
 

@@ -274,8 +274,14 @@ class DVDSlideshow():
 
     @staticmethod
     def getSilence(location, name, fields):
-        track = DVDSlideshow.parse_track(DVDSlideshow.pop(fields))
-        return Element.Silence(location, name, track)
+        settings = DVDSlideshow.parse_track(DVDSlideshow.pop(fields))
+        effects  = []
+        while fields:
+            name = DVDSlideshow.pop(fields)
+            if(name):
+                effects.append(Element.Effect(name, eval(DVDSlideshow.pop(fields))))
+        #track = DVDSlideshow.parse_track(DVDSlideshow.pop(fields))
+        return Element.Silence(location, name, settings, effects)
 
     @staticmethod
     def getChapter(location, name, fields):

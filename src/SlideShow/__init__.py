@@ -313,7 +313,8 @@ def initialize_elements(elements, config):
         config["width"]  = width
         config["height"] = height
 
-
+    if config.has_key("output_video_bitrate"):
+        config["video_bitrate"] = config["output_video_bitrate"]
 
     if config.has_key("output_framerate"):
         config["framerate"]=float(config["output_framerate"])
@@ -609,7 +610,7 @@ def get_audio_bin(elements, config, info):
     tracks.sort()
     info["num_audio_tracks"] = 0
     if len(tracks) == 0:
-        audio_info = { 1 : dict( elements=[Element.Silence("generated", "silence", 1, config=config)], starts=[0], durations=[-1] ) }
+        audio_info = { 1 : dict( elements=[Element.Silence("generated", "silence", dict(track=1), {}, config=config)], starts=[0], durations=[-1] ) }
         tracks = [1]
 
     print audio_info
@@ -622,7 +623,7 @@ def get_audio_bin(elements, config, info):
         # Add silence to the beginning if the first audio element does not
         # start at time 0.
         if(starts[0] != 0):
-            elements.insert(0, Element.Silence("generated","silence",track, config=config))
+            elements.insert(0, Element.Silence("generated","silence",dict(track=track), {}, config=config))
             durations.insert(0, starts[0])
             starts.insert(0, 0)
 
@@ -723,7 +724,7 @@ def get_audio_bin(elements, config, info):
                 extra = min(info["duration"] - start - duration,
                             starts[pos_next] - start - duration)
             if extra > 0:
-                elements2.append(Element.Silence("generated", "silence", track, config=config))
+                elements2.append(Element.Silence("generated", "silence", dict(track=track), {}, config=config))
                 starts2.append(start + duration)
                 durations2.append(extra)
         
@@ -816,19 +817,23 @@ def get_encoder_backend(config, num_audio_tracks):
     video_scale = gst.element_factory_make("videoscale")
     video_caps2 = gst.element_factory_make("capsfilter")
 
+    print "video bitrate = " + str(config["video_bitrate"]) + " kB/s"
+    print "output size   = " + str(config["width"]) + "x" + str(config["height"])
+
     if 1:
         video_caps2.props.caps = config.get_video_caps("I420", dict(border=0))
         video_enc = gst.element_factory_make("ffenc_mpeg4", "encoder")
-        video_enc.props.bitrate = config["video_bitrate"] * 1000 * 4
+        video_enc.props.bitrate = config["video_bitrate"] * 1000
         mux = gst.element_factory_make("mp4mux", "mux")
         extension = "mp4"
         config["ac3"] = False # this mux can't handle ac3
-    elif 0:
+    elif 1:
         video_caps2.props.caps = config.get_video_caps("I420", dict(border=0))
-        video_enc = gst.element_factory_make("x264enc",    "video_enc")
+        video_enc = gst.element_factory_make("x264enc",    "encoder")
         video_enc.props.bitrate = config["video_bitrate"]
         mux = gst.element_factory_make("mp4mux", "mux")
         extension = "mp4"
+        config["ac3"] = False # this mux can't handle ac3
     elif 0:
         video_caps2.props.caps = config.get_video_caps("I420", dict(border=0, width=720, height=480))
         video_enc = gst.element_factory_make("ffenc_mpeg2video", "video_enc")
