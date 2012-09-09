@@ -394,7 +394,7 @@ class ImageSettings(Settings):
         pass
 
     def on_fx_new_annotation(self, evt):
-        fx = SlideShow.Element.Effect("annotate","text=Change Me;font=Helvetica-Bold;pointsize=8%;position=50%,90%;fill=white;stroke=black")
+        fx = SlideShow.Element.Effect("annotate","text=Change Me;ypos=0.5;xpos=0.5;justification=center;size=12%")
         self.insert_fx(fx)
 
     def on_fxview_button_press(self, view, event):
