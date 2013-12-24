@@ -31,7 +31,11 @@ def get_color(x):
 
 def get_dims(img_file):
     import commands
-    return map(int, commands.getoutput('identify -format "%w %h" '+img_file).split())
+    try:
+        return map(int, commands.getoutput('identify -format "%w %h" '+img_file).split())
+    except:
+        print img_file
+        raise
     #d = gst.parse_launch("filesrc location="+img_file+" ! decodebin2 name=decoder ! fakesink")
     #d.set_state(gst.STATE_PLAYING)
     #d.get_state() # blocks until state transition has finished

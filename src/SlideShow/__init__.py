@@ -318,8 +318,8 @@ def initialize_elements(elements, config):
 
     if config.has_key("output_framerate"):
         config["framerate"]=float(config["output_framerate"])
-    framerate_numer = 30000 #int(round(config["framerate"] * 100))
-    framerate_denom = 1000 # 1001
+    framerate_numer = 24#30000 #int(round(config["framerate"] * 100))
+    framerate_denom = 1#1000 # 1001
     config["framerate"] = framerate_numer / float(framerate_denom)
     config["framerate_numer"] = framerate_numer
     config["framerate_denom"] = framerate_denom
@@ -812,6 +812,8 @@ def get_encoder_backend(config, num_audio_tracks):
 #        encoder_cmd = "mpeg2enc "+config["mpeg2enc_params"]+" -o "+config["workdir"]+"/video.mpg -" # < "$workdir"/$yuvfifo >> "$outdir/$logfile" 2>&1 & 
     
     backend = gst.Bin("backend")
+    video_ident = gst.element_factory_make("identity")
+    video_ident.props.single_segment = 1
     video_caps = gst.element_factory_make("capsfilter")
     video_caps.props.caps = config.get_video_caps("I420", dict(border=0))
     video_scale = gst.element_factory_make("videoscale")
@@ -820,7 +822,7 @@ def get_encoder_backend(config, num_audio_tracks):
     print "video bitrate = " + str(config["video_bitrate"]) + " kB/s"
     print "output size   = " + str(config["width"]) + "x" + str(config["height"])
 
-    if 1:
+    if 0:
         video_caps2.props.caps = config.get_video_caps("I420", dict(border=0))
         video_enc = gst.element_factory_make("ffenc_mpeg4", "encoder")
         video_enc.props.bitrate = config["video_bitrate"] * 1000
@@ -831,6 +833,7 @@ def get_encoder_backend(config, num_audio_tracks):
         video_caps2.props.caps = config.get_video_caps("I420", dict(border=0))
         video_enc = gst.element_factory_make("x264enc",    "encoder")
         video_enc.props.bitrate = config["video_bitrate"]
+        video_enc.props.speed_preset = 3 #config["video_bitrate"]
         mux = gst.element_factory_make("mp4mux", "mux")
         extension = "mp4"
         config["ac3"] = False # this mux can't handle ac3
@@ -858,9 +861,9 @@ def get_encoder_backend(config, num_audio_tracks):
     sink   = gst.element_factory_make("filesink", "sink")
     sink.set_property("location", config["outfile"])
 
-    backend.add(video_caps, video_scale, video_caps2, video_enc, mqueue, mux, sink)
-    gst.element_link_many(video_caps, video_scale, video_caps2, video_enc, mqueue, mux, sink)
-    backend.add_pad(gst.GhostPad("video_sink", video_caps.get_pad("sink")))
+    backend.add(video_ident, video_caps, video_scale, video_caps2, video_enc, mqueue, mux, sink)
+    gst.element_link_many(video_ident, video_caps, video_scale, video_caps2, video_enc, mqueue, mux, sink)
+    backend.add_pad(gst.GhostPad("video_sink", video_ident.get_pad("sink")))
 
     for i in range(num_audio_tracks):
         audio_ident = gst.element_factory_make("identity")
