@@ -284,7 +284,7 @@ def initialize_elements(elements, config):
                         mpeg2enc_params="-v 0 -a 2 -q 4 -4 2 -2 1 -s -M 0 -f $mplex_type -E -N -R 2",
                         ))
     config["video_buffer"] = '-b 1000'
-    if config[ "output_format"] == 'mpg':  # assume computer output:
+    if config["output_format"] == 'mpg':  # assume computer output:
         config.update(dict(
                 #sq_pixel_multiplier=$(( 1000 ))  # keep pixels square?
 		ppmtoy4m_aspect='1:1',  # square pixels
@@ -731,7 +731,7 @@ def get_audio_bin(elements, config, info):
         # now let's build the gnlcomposition for this audio track
         comp = gst.element_factory_make("gnlcomposition")
         priority = 1
-        print elements2, durations2, starts2
+        #print elements2, durations2, starts2
         for pos, element in enumerate(elements2):
             dur   = durations2[pos]
             start = starts2[pos]
@@ -740,15 +740,18 @@ def get_audio_bin(elements, config, info):
             src.add(element.get_bin(dur))
             src.props.start          = start
             src.props.duration       = dur
+            src.props.media_duration = dur
             if hasattr(element, "start"):
-                src.props.media_start= element.start
+                src.props.media_start = element.start
+                #src.props.media_duration -= element.start
             else:
                 src.props.media_start= 0
-            src.props.media_duration = dur
             src.props.priority       = priority
             comp.add(src)
             priority   += 1
-    
+            
+            print "%f %f %f %f" % (src.props.start/1e9, src.props.duration/1e9, src.props.media_start/1e9, src.props.media_duration/1e9)
+
         # add an audio adder to sum all overlapping tracks
         op = gst.element_factory_make("gnloperation", config.get_unique("audio_adder_track"+str(track)))
         op.add(gst.element_factory_make("adder"))
@@ -834,9 +837,9 @@ def get_encoder_backend(config, num_audio_tracks):
         video_enc = gst.element_factory_make("x264enc",    "encoder")
         video_enc.props.bitrate = config["video_bitrate"]
         video_enc.props.speed_preset = 3 #config["video_bitrate"]
-        mux = gst.element_factory_make("mp4mux", "mux")
+        mux = gst.element_factory_make("avimux", "mux")
         extension = "mp4"
-        config["ac3"] = False # this mux can't handle ac3
+        config["ac3"] = True #False # this mux can't handle ac3
     elif 0:
         video_caps2.props.caps = config.get_video_caps("I420", dict(border=0, width=720, height=480))
         video_enc = gst.element_factory_make("ffenc_mpeg2video", "video_enc")
@@ -865,19 +868,24 @@ def get_encoder_backend(config, num_audio_tracks):
     gst.element_link_many(video_ident, video_caps, video_scale, video_caps2, video_enc, mqueue, mux, sink)
     backend.add_pad(gst.GhostPad("video_sink", video_ident.get_pad("sink")))
 
+    print "NUM_AUDIO_TRACKS: ", num_audio_tracks
     for i in range(num_audio_tracks):
         audio_ident = gst.element_factory_make("identity")
         audio_ident.props.single_segment = 1
         if config["ac3"]:
             audio_enc = gst.element_factory_make("ffenc_ac3")
+            audio_enc.props.bitrate=192000
         else:
             audio_enc = gst.element_factory_make("lamemp3enc")
-        elements = [ audio_ident, audio_enc,  ]
+        caps = gst.element_factory_make("capsfilter")
+        caps.props.caps = config.get_audio_caps()
+        audioconvert = gst.element_factory_make("audioconvert")
+        elements = [  caps, audioconvert, audio_ident, audio_enc,  ]
         backend.add(*elements)
         gst.element_link_many(*elements)
         elements[-1].link(mqueue)
         mqueue.link(mux)
-        backend.add_pad(gst.GhostPad("audio_sink%d"%i, audio_ident.get_pad("sink")))
+        backend.add_pad(gst.GhostPad("audio_sink%d"%i, caps.get_pad("sink")))
     return backend
 
 def get_preview_backend(config, num_audio_tracks):
@@ -916,6 +924,7 @@ def get_gst_pipeline(frontend, backend):
     pipeline.add(frontend, backend)
     i = 0
     for pad in frontend.pads():
+        print "PAD:", pad.get_name()
         if pad.get_name() == "video_src":
             pad.link(backend.get_pad("video_sink"))
         else:

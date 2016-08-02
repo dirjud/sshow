@@ -32,7 +32,7 @@ def get_color(x):
 def get_dims(img_file):
     import commands
     try:
-        return map(int, commands.getoutput('identify -format "%w %h" '+img_file).split())
+        return map(int, commands.getoutput('identify -format "%w %h" '+img_file +" 2> /dev/null").split())
     except:
         print img_file
         raise
@@ -576,6 +576,8 @@ class Video(Element):
         self.settings = settings
         if(self.settings.has_key("start")):
             self.start = int(self.settings["start"] * gst.SECOND)
+        else:
+            self.start = 0
         
     def initialize(self):
         if not(self.duration):
@@ -623,4 +625,13 @@ class Video(Element):
         #bin.add_pad(gst.GhostPad("audio_src", audio_elements[-1].get_pad("src")))
         return bin
 
-#    elif image[-1] == 'musictitle':
+        #src1 = gst.element_factory_make("gnlsource")
+        #src1.add(bin)
+        #src1.set_property("start",          0)
+        #src1.set_property("duration",       duration)
+        #src1.set_property("media-start",    self.start)
+        #src1.set_property("media-duration", duration)
+        ##src1.set_property("priority",       priority)
+        #
+        #src1.add_pad(gst.GhostPad("src", elements[-1].get_pad("src")))
+        #return src1
